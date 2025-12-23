@@ -1,0 +1,39 @@
+#general
+__pycache__/
+visualizations/
+.mpl/
+.pytest_cache/
+.DS_Store
+
+# Intermediate documents
+*.aux
+*.lof
+*.log
+*.lot
+*.fls
+*.out
+*.toc
+*.fmt
+*.fot
+*.cb
+*.cb2
+*.dvi
+*.xdv
+*.blg
+*.bbl
+
+# Bibliography files (if generated automatically)
+*.bib.bak
+*.bcf
+*.xml
+
+# Compiled output
+*.pdf
+*.ps
+*.glg
+*.glo
+*.gls
+*.ist
+*.alg
+*.acr
+*.acn

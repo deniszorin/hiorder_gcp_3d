@@ -1,0 +1,46 @@
+Implementation details 
+
+1. The mesh is loaded from an obj file, assumed to satisfy the requirements in potential_definition.tex 
+(manifold, oriented).
+
+2. Connectivity data structure
+ To compute the potential for a face, we need 3 vertices of the face. 
+To compute the potential for an edge, we need two incident face indices (one if boundary) 
+To compute the potential for a vertex, we need indices of all incident faces. 
+Construct these sets as follows: 
+Pass through all faces (v0,v1,v2) with index f.  
+    Add face index f to the face list for all vertices v0, v1, v2. 
+    Add f to the face list for edges sorted(v0,v1), sorted(v1,v2), sorted(v2,v0), where sorted indicates 
+    permuting indices of an edge e = (va,vb) so that e[0] < e[1].  
+    Add edges  sorted(vi,vj), sorted(vi,vk) to the list for vi if not there, with (i,j,k) going over triples
+    (0,1,2), (1,2,0), (2,0,1).
+
+3. Connectivity validation: verify on a single triangle: 0,1,2.   Edge face lists should all have a single face, 
+same for vertex lists.  verify on a tet,  0,1,2, 0,2,3, 0,3,1, 3 2 1.   Each vertex should have 3 faces on the list 
+0 -> 0,1,2  1 ->  0, 2, 3 , 2 -> 0, 1, 3, 3 -> 1,2,3.  Each edge should have two faces on the list. 
+verify on a tet with one face removed, 3 edges should have one face on the list, and 3 vertices only 2 faces.
+
+4.  The function H^\alpha(t) is defined as H(t/alpha), where H(z) = ((2-z)*(z + 1)^2)/4 for  -1 <  z < 1, 
+H(z) = 0 if z  <-1, and H(z) = 1 if z > 1. 
+
+5.  The total potential  defined in potential_definition.tex can be computed as follows. 
+The input is  the evaluation point,  alpha, p,  lists of incident faces for vertices and edges, list of faces represented as vertex triples, and list of vertex positions. 
+  a. Compute and add all face potentials. For each face, store $B^f(q)$ value separately.
+  b. For each edge, look up incident faces, and compute the potential using stored values of $B^f(q)$.
+  c. Same for each vertex:  look up all incident faces, and use stored values of $B^f(q)$.
+The evaluation of the potential should be accelerated with numpy and numba.
+
+6. Visualization functions.  Use plotly for visualization, make sure functions can be called from a notebook. 
+Do write a script that generates all described visualizations for validation. 
+ a. Write a function that takes as input  lists of incident faces for vertices and edges, list of faces represented as vertex triples (may be empty), list of isolated edges, as vertex pairs, and a list of vertex positions, and visualizes the potential isolines sampled on a plane provided as (p, n), where p is a plane point and n  normal.
+ b. Write a function that visualizes an isosurface of the face potential  of the input corresponding to the value specified by the user as a surface in 3D using plotly, using 3D contouring.  
+ A flag should be provided as an argument whether to draw the complete potential or only face, edge or vertex terms. 
+
+5. Validation of the potential.  All functions should take alpha as a parameter with default 0.1, and default p = 2. 
+ a. For a single face, visualize  the potential isolines sampled on a plane perpendicular to the 
+face, and a 3d level set of the potential.
+b. For an edge, shared by two triangles with non-collinear normals visualize the potential isolines sampled on a plane perpendicular to the edge and  visualize an isosurface of the edge potential corresponding to the potential value specified by the user.
+c. For a vertex v with 4 triangles around it, arrange them to be non-coplanar, with (x,y) coordinates of adjacent vertices sequentially on a circle in (x,y) plane, and z coordinate alternating between positive and negative, and zero for the central vertex v. Visualize an isosurface of the vertex potential. 
+d.  Same, but for all z coordinates except central negative.  central remains at zero. 
+
+

@@ -1,0 +1,111 @@
+Implementation plan for Python
+
+Scope and inputs
+- Mesh: triangular, manifold, oriented. Faces as triples of vertex indices. Vertices as 3D positions.
+Using obj format.
+- Parameters: alpha (default 0.1), p (default 2), evaluation point(s) q.
+- Outputs: smoothed_offset_potential(q) and optionally face/edge/vertex components.
+
+1) Data structures and connectivity
+- Parse OBJ into:
+  - V: float (n,3)
+  - F: int (m,3)
+- Build connectivity:
+  - faces_per_vertex: list of face indices for each vertex.
+  - faces_per_edge: dict mapping edge (min_vi,max_vj) -> list of incident face indices.
+  - edges_per_vertex: list of edges (as sorted index pairs) for each vertex.
+- Validation routines:
+  - Single triangle check (each edge has 1 face, each vertex has 1 face).
+  - Tetrahedron checks described in implementation.txt.
+  - Boundary case check (removed face) described in implementation.txt
+
+2) Geometry helpers
+- For each face:
+  - n = unit normal (based on CCW vertex order).
+  - For each edge e of face (oriented CCW):
+    - d_e = unit edge direction (from v_i to v_{i+1}).
+    - Inward edge normal = n x d_e.
+- Projection:
+  - P_e(q): projection of q to the line of edge e.
+  - P^e(q): same as P_e(q) for edge potential.
+  - r^f(q): distance to triangle plane.
+  - r^e(q): distance to edge line.
+  - r^v(q): distance to vertex.
+
+3) Smoothed Heaviside
+- H(z):
+  - if z < -1: 0
+  - if -1 <= z <= 1: ((2 - z) * (z + 1)^2) / 4
+  - if z > 1: 1
+- H_alpha(t) = H(t / alpha)
+
+4) Potential components
+- Face blending term:
+  - Phi^{e,f}(q) = (q - P_e(q))_+ dot (n x d_e)
+  - (q - P_e(q))_+ is the unit-length direction from q to P_e(q)
+  - B^f(q) = product over edges e in f of H_alpha(Phi^{e,f}(q))
+  - I^f(q) = B^f(q) / (r^f(q)^p)
+- Edge term:
+  - Default (edge_potential_mode="heaviside"):
+    - Store Phi^{e,f} per face edge while computing B^f.
+    - Phi^{0,e}(q) = (q - p0)_+ dot (p1 - p0)_+
+    - Phi^{1,e}(q) = (q - p1)_+ dot (p0 - p1)_+
+    - B^e(q) = (1 - H_alpha(Phi^{e,f0}(q)) - H_alpha(Phi^{e,f1}(q))) * H_alpha(Phi^{0,e}(q)) * H_alpha(Phi^{1,-e}(q))
+    - I^e(q) = B^e(q) / (r^e(q)^p)
+    - For boundary edges, treat the missing face H_alpha(Phi^{e,f}) as 0
+  - Optional (edge_potential_mode="blend"):
+    - B^e(q) = (1 - B^{f0}(q) - B^{f1}(q)) * H_alpha(Phi^{0,e}(q)) * H_alpha(Phi^{1,e}(q))
+- Vertex term:
+  - Default (vertex_potential_mode="heaviside"):
+    - For face f incident to v, let e0(v,f), e1(v,f) be its two edges incident to v.
+    - Face contribution: sum_f H_alpha(Phi^{e0(v,f),f}(q)) * H_alpha(Phi^{e1(v,f),f}(q))
+    - For edge e incident to v, with faces f0(e), f1(e):
+      - Phi^{v,e} = Phi^{0,e} if v is p0, Phi^{1,-e} if v is p1
+      - Edge contribution: sum_e (1 - H_alpha(Phi^{e,f0(e)}(q)) - H_alpha(Phi^{e,f1(e)}(q))) * H_alpha(Phi^{v,e}(q))
+    - B^v(q) = 1 - (face contributions) - (edge contributions)
+    - I^v(q) = B^v(q) / (r^v(q)^p)
+  - Optional (vertex_potential_mode="blend"):
+    - B^v(q) = 1 - sum_{f in F_v} B^f(q) - sum_{e in E_v} B^e(q)
+    - I^v(q) = B^v(q) / (r^v(q)^p)
+- Total:
+  - I(q) = sum I^f + sum I^e + sum I^v
+
+5) Singularities
+- If r^f(q), r^e(q), or r^v(q) is zero, return a large value (1e12) for that term.
+- Use a small epsilon for unit vector normalization when q == P_e(q).
+- Use global singular_value and eps for these thresholds.
+
+6) Implementation flow
+- Precompute per-face geometry (normals, edge directions, edge inward normals).
+- Evaluate for point(s) q in smoothed_offset_potential:
+  1) Loop faces: compute B^f(q) and I^f(q); store B^f.
+  2) Loop edges: use incident faces to compute B^e and I^e.
+  3) Loop vertices: use stored B^f and B^e to compute I^v.
+  4) Sum as requested (total or components) based on include_faces/include_edges/include_vertices flags.
+
+7) Performance
+- Numpy vectorization for batched q points.
+- Optional Numba JIT for inner loops (face/edge/vertex sweeps).
+- Store geometry in contiguous arrays for JIT-friendly access.
+
+8) Visualization (Plotly)
+- Function A: isolines on a plane (p, n):
+  - Sample grid in plane coordinates.
+  - Evaluate potential at each grid point.
+  - Plot contour/isolines.
+- Function B: isosurface in 3D:
+  - Sample 3D grid.
+  - Evaluate potential (select total or face/edge/vertex via flag).
+  - Plot isosurface via Plotly 3D contouring.
+
+9) Validation scenarios
+- Single face:
+  - Plane perpendicular to face for isolines.
+  - 3D isosurface of total potential.
+- Edge shared by two triangles with non-collinear normals:
+  - Plane perpendicular to edge isolines.
+  - Edge potential isosurface at specified value.
+- Vertex with 4 incident triangles:
+  - Construct geometry as described (alternating z +/-, center z = 0).
+  - Vertex potential isosurface.
+- Variant: all neighbor z negative (center at 0).

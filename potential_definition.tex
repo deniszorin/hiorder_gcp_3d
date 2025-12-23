@@ -1,0 +1,93 @@
+\documentclass{article}
+
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{amsmath}        % for \eqref and math environments
+\usepackage{lipsum}
+\usepackage{fancyhdr}       % header
+\usepackage{graphicx}       % graphics
+\graphicspath{{media/}}     % organize your images and other figures under media/ folder
+\usepackage{xcolor}
+
+\begin{document}
+\section{3D smoothed offset potential for meshes}
+
+We have a mesh with the set of faces $F$, edges $E$ and  vertices $V$.   Each face is triangular; we assume that all vertices of each face are distinct, and  at most one edge connects any two vertices.  In this case, faces is defined by a sequence of vertex indices $(v_0, v_1, v_2)$ and edges are defined by pairs of vertices $(v_0, v_1)$.  The mesh is an  edge-manifold, i.e., each edge is  shared by at most two faces. We assume that if two faces share an edge $(v_0, v_1)$,  in one face the vertices are enumerated, up to circular permutation as $(v_0, v_1, v_2)$, and in the other $(v_1,v_0,v_3)$, 
+i.e., the order is reversed. This implies the mesh is orientable.  
+
+\section{3D smoothed offset potential for meshes}
+
+We define the 3D potential following the pattern of the 2D definition.  We start with defining the potential for a triangular face, then define the edge potential as a complement of the face potential, and finally the vertex potential.   
+
+Let $H^\alpha(z)$ be a smoothed Heaviside function transitioning from $0$ to $1$ on the segment $[-\alpha,\alpha]$. For a point $q$, let $P_e(q)$, $e=e_0,e_1, e_2$ be the projection of the point to the line of one of the edges of the triangle,  and $r^f(q)$ be the distance to the triangle plane. Let 
+\[
+\Phi^{e,f}(q) = (q-P_e(q))_+ \cdot (n \times d_e)
+\], 
+where $d_e$ is a unit vector along the edge, and 
+$n\times d_e$ is the inward pointing perpendicular to the edge, assuming $e$'s direction is chosen to be CCW, with respect to the normal direction.
+
+Then we define the potential for a triangle as 
+\[
+I^f_\alpha(q) = \frac{H^\alpha(\Phi^{e_0,f}(q))
+H^\alpha(\Phi^{e_1,f}(q))H^\alpha(\Phi^{e_2,f}(q))}{r^f(q)^p} = \frac{B^f_\alpha(q)}{r^f(q)^p}
+\]
+The numerator is an angular blending function, which for
+$\alpha = 0$ becomes the product of 3 Heaviside functions, i.e. 1, if  $(q-P_i(q))_+ \cdot (n \times e_i) > 0$, for all i, and zero otherwise, i.e., the projection of $q$ is in the interior of the triangle. 
+
+\paragraph{Edge potential.} Suppose an 
+edge $e$ is shared by triangles $f_0$ and $f_1$, and 
+let $P_e(q)$ be the projection of $q$ on the edge; note that this is the same point that is used in $\Phi_i$ computation for the incident triangles. 
+
+In addition, define 
+\[
+\Phi^{j,e}(q) = (q - p_j)_+ \cdot (p_k - p_j)_+
+\]
+where $(j,k) = (0,1), (1,0)$, and $p_0$, $p_1$ are the two endpoints of the edge.
+Note that $(p_k - p_j)_+$ are the vectors $d_e$ for the two incident faces. 
+
+% DZ this version has the problem that if 
+% the potential extends > triangle size the edge potential 
+% support may have disconnected components "on the other sides" of adjacent triangles, where $B^f$ vanishes. 
+%\[
+%I^e_\alpha(q) = \frac{ (1- B^{f_0}(q) - B^{f_1}(q))H^\alpha(\Phi^{0,e}(q))H^\alpha(\Phi^{1,-e}(q))}{r^e(q)^p} \]
+
+\[
+I^e_\alpha(q) = \frac{ (1- H^\alpha(\Phi^{e,f_0}(q))-H^\alpha(\Phi^{e,f_1}(q))H^\alpha(\Phi^{0,e}(q))H^\alpha(\Phi^{1,-e}(q))}{r^e(q)^p} \]
+where  $\Phi^{e,f_i}$ are computed as in the face computation, and $-e$ indicates that the edge orientation is switched. 
+
+\paragraph{Vertex potential.} For vertices, we define the potential 
+with respect to all incident faces and edges.
+$F_v$ be the set of incident triangles, and $E_v$ the set of incident edges.  Denote $e_i(v,f)$, $i=0,1$, for a face $f$ and vertex $v$ to be the two edges (in any order) that have endpoint $v$ and are edges of face $f$.  Denote $f_1(e)$ and $f_0(e)$ to be the two faces sharing the edge $e$ (for a boundary edge, only one is defined, and in the formula below, it is skipped). $\Phi^{e_i(v,f),f}$ and $\Phi^{e,f_1(e)}$
+are per (edge, face) pair quantities computed for the face potential. 
+For an edge $e$ with endpoints $p_0$ $p_1$, $\Phi^{v,e} = \Phi^{0,e}$ 
+defined as for the edge potential,  if $v = p_0$ and $\Phi^{v,e} = \Phi^{1,-e}$, if $v = p_1$. 
+
+
+% Same problem as with the edge simplest version
+%
+%\[
+%I^v_\alpha(q) = \frac{ 1- \sum_{f \in F_v} B^f(q)}{r^v(q)^p}
+%\]
+
+Then
+\[
+I^v_\alpha(q) = \frac{ 1- \sum_{f \in F_v} H^\alpha(\Phi^{e_0(v,f),f})H^\alpha(\Phi^{e_1(v,f),f})
+- \sum_{e \in E_v}
+\left(1- H^\alpha(\Phi^{e,f_0(e)}-H^\alpha(\Phi^{e,f_1(e)})H^\alpha(\Phi^{v,e}\right)
+}{(r^v)^p}
+\]
+
+The total potential is computed as the sum over faces, edges, and vertices: 
+
+\[
+I_\alpha(q) = \sum_{v \in V} I^v(q) +  \sum_{e \in E} I^e(q)  +  \sum_{f \in F} I^f(q) 
+\]
+
+\end{document}
