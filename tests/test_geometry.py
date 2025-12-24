@@ -111,3 +111,15 @@ def test_load_obj_triangle(tmp_path: Path):
     assert mesh.F.shape == (1, 3)
     assert np.allclose(mesh.V[1], [1.0, 0.0, 0.0])
     assert np.all(mesh.F[0] == np.array([0, 1, 2]))
+
+
+def test_load_obj_mesh_libigl():
+    pytest = __import__("pytest")
+    pytest.importorskip("igl")
+    from viz import load_obj_mesh
+
+    obj_path = Path(__file__).resolve().parent / "Bunny-LowPoly.objs"
+    mesh = load_obj_mesh(str(obj_path))
+    assert mesh.V.shape[0] > 0
+    assert mesh.F.shape[0] > 0
+    assert mesh.F.shape[1] == 3

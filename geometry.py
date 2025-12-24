@@ -17,8 +17,8 @@ EdgeKey = Tuple[int, int]
 class MeshData:
     """Raw mesh data.
 
-    V: (n, 3) float array of vertex positions.
-    F: (m, 3) int array of face indices (CCW order).
+    V: (N, 3) float array of vertex positions.
+    F: (M, 3) int array of face indices (CCW order).
     """
     V: ArrayF
     F: ArrayI
@@ -40,9 +40,9 @@ class MeshConnectivity:
 @dataclass(frozen=True)
 class FaceGeometry:
     """Per-face geometry for fast evaluation.
-    normals: (m, 3) unit normals.
-    edge_dirs: (m, 3, 3) edge direction unit vectors for edges (v0->v1, v1->v2, v2->v0).
-    edge_inward: (m, 3, 3) inward edge normals (n x d_e).
+    normals: (M, 3) unit normals.
+    edge_dirs: (M, 3, 3) edge direction unit vectors for edges (v0->v1, v1->v2, v2->v0).
+    edge_inward: (M, 3, 3) inward edge normals (n x d_e).
     """
     normals: ArrayF
     edge_dirs: ArrayF
