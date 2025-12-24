@@ -3,8 +3,10 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import textwrap
 
 import geometry
+from geometry import load_obj_mesh
 
 
 def _mesh_single_triangle():
@@ -96,17 +98,21 @@ def test_precompute_face_geometry_single_triangle():
         assert math.isclose(float(np.dot(n, inward)), 0.0, abs_tol=1e-7)
 
 
-def test_load_obj_triangle(tmp_path: Path):
-    obj_text = """
-    v 0 0 0
-    v 1 0 0
-    v 0 1 0
-    f 1 2 3
-    """.strip()
+def test_load_obj_mesh_libigl_triangle(tmp_path: Path):
+    pytest = __import__("pytest")
+    pytest.importorskip("igl")
+    obj_text = textwrap.dedent(
+        """
+        v 0 0 0
+        v 1 0 0
+        v 0 1 0
+        f 1 2 3
+        """
+    ).strip()
     obj_path = tmp_path / "tri.obj"
     obj_path.write_text(obj_text, encoding="utf-8")
 
-    mesh = geometry.load_obj(str(obj_path))
+    mesh = load_obj_mesh(str(obj_path))
     assert mesh.V.shape == (3, 3)
     assert mesh.F.shape == (1, 3)
     assert np.allclose(mesh.V[1], [1.0, 0.0, 0.0])
@@ -116,9 +122,7 @@ def test_load_obj_triangle(tmp_path: Path):
 def test_load_obj_mesh_libigl():
     pytest = __import__("pytest")
     pytest.importorskip("igl")
-    from viz import load_obj_mesh
-
-    obj_path = Path(__file__).resolve().parent / "Bunny-LowPoly.objs"
+    obj_path = Path(__file__).resolve().parent / "Bunny-LowPoly.obj"
     mesh = load_obj_mesh(str(obj_path))
     assert mesh.V.shape[0] > 0
     assert mesh.F.shape[0] > 0

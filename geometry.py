@@ -31,10 +31,12 @@ class MeshConnectivity:
     faces_per_vertex: list of face indices for each vertex.
     faces_per_edge: dict edge -> list of incident face indices.
     edges_per_vertex: list of edges (as sorted index pairs) for each vertex.
+    edge_local_indices: dict edge -> list of local edge indices per incident face.
     """
     faces_per_vertex: List[List[int]]
     faces_per_edge: Dict[EdgeKey, List[int]]
     edges_per_vertex: List[List[EdgeKey]]
+    edge_local_indices: Dict[EdgeKey, List[int]]
 
 
 @dataclass(frozen=True)
@@ -49,49 +51,16 @@ class FaceGeometry:
     edge_inward: ArrayF
 
 
-def load_obj(path: str) -> MeshData:
-    """Load a triangular OBJ file.
-    Returns MeshData with V (float) and F (int) arrays.
-    """
+def load_obj_mesh(path: str) -> MeshData:
+    """Load a triangle mesh OBJ with libigl."""
 
-    vertices: List[List[float]] = []
-    faces: List[List[int]] = []
+    try:
+        import igl
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError("libigl is required to load OBJ meshes here.") from exc
 
-    with open(path, "r", encoding="utf-8") as handle:
-        for raw in handle:
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.startswith("v "):
-                parts = line.split()
-                if len(parts) < 4:
-                    raise ValueError(f"Invalid vertex line: {line}")
-                vertices.append([float(parts[1]), float(parts[2]), float(parts[3])])
-                continue
-            if line.startswith("f "):
-                parts = line.split()[1:]
-                if len(parts) != 3:
-                    raise ValueError("Only triangular faces are supported.")
-                face: List[int] = []
-                for item in parts:
-                    idx_str = item.split("/", 1)[0]
-                    if not idx_str:
-                        raise ValueError(f"Invalid face index in line: {line}")
-                    idx = int(idx_str)
-                    if idx == 0:
-                        raise ValueError("OBJ indices are 1-based.")
-                    if idx < 0:
-                        idx = len(vertices) + idx + 1
-                    face.append(idx - 1)
-                faces.append(face)
-                continue
-
-    if not vertices or not faces:
-        raise ValueError("OBJ must contain at least one vertex and one face.")
-
-    V = np.asarray(vertices, dtype=float)
-    F = np.asarray(faces, dtype=int)
-    return MeshData(V=V, F=F)
+    v, f = igl.read_triangle_mesh(path)
+    return MeshData(V=np.asarray(v, dtype=float), F=np.asarray(f, dtype=int))
 
 
 def build_connectivity(mesh: MeshData) -> MeshConnectivity:
@@ -101,6 +70,7 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
     nf = mesh.F.shape[0]
     faces_per_vertex: List[List[int]] = [[] for _ in range(nv)]
     faces_per_edge: Dict[EdgeKey, List[int]] = {}
+    edge_local_indices: Dict[EdgeKey, List[int]] = {}
     edges_per_vertex: List[List[EdgeKey]] = [[] for _ in range(nv)]
     edges_per_vertex_set: List[set[EdgeKey]] = [set() for _ in range(nv)]
 
@@ -111,9 +81,10 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
         faces_per_vertex[v2].append(f)
 
         edges = [(v0, v1), (v1, v2), (v2, v0)]
-        for a, b in edges:
+        for local_idx, (a, b) in enumerate(edges):
             key = (a, b) if a < b else (b, a)
             faces_per_edge.setdefault(key, []).append(f)
+            edge_local_indices.setdefault(key, []).append(local_idx)
 
         per_vertex_edges = {
             v0: [(v0, v1), (v0, v2)],
@@ -131,6 +102,7 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
         faces_per_vertex=faces_per_vertex,
         faces_per_edge=faces_per_edge,
         edges_per_vertex=edges_per_vertex,
+        edge_local_indices=edge_local_indices,
     )
 
 

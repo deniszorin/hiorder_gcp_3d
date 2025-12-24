@@ -182,7 +182,6 @@ def isosurface_with_clip(
     mesh: MeshData,
     levels: Optional[Sequence[float]] = None,
     res: int = 100,
-    parallel=False,
 ):
     """Interactive PyVista isosurfaces with a clipping plane widget."""
 
@@ -205,8 +204,7 @@ def isosurface_with_clip(
     xx, yy, zz = np.meshgrid(xs, ys, zs, indexing="ij")
     points = np.stack([xx, yy, zz], axis=-1).reshape(-1, 3)
 
-    comps = smoothed_offset_potential(points, mesh, conn, geom, 
-                                      parallel=parallel)
+    comps = smoothed_offset_potential(points, mesh, conn, geom)
     values = comps.face + comps.edge + comps.vertex
     log_values = np.log10(np.maximum(values, 1e-12))
 
@@ -545,18 +543,6 @@ def generate_reg_mesh(f, n: int) -> MeshData:
     return MeshData(V=np.asarray(verts, dtype=float), F=np.asarray(faces, dtype=int))
 
 
-def load_obj_mesh(path: str) -> MeshData:
-    """Load a triangle mesh OBJ with libigl."""
-
-    try:
-        import igl
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise ImportError("libigl is required to load OBJ meshes here.") from exc
-
-    v, f = igl.read_triangle_mesh(path)
-    return MeshData(V=np.asarray(v, dtype=float), F=np.asarray(f, dtype=int))
-
-
 def sample_potential(
     mesh: MeshData,
     alpha: float = 0.1,
@@ -566,7 +552,6 @@ def sample_potential(
     yrange: Optional[Sequence[float]] = None,
     zrange: Optional[Sequence[float]] = None,
     default_padding: float = 1.5,
-    parallel=False
 ):
     """Sample potential on a regular grid and return samples plus clip params."""
 
@@ -590,7 +575,7 @@ def sample_potential(
         bounds_min[2], bounds_max[2] = float(zrange[0]), float(zrange[1])
 
     q_vol = sample_volume_grid(bounds_min, bounds_max, resolution=resolution)
-    comps = smoothed_offset_potential(q_vol, mesh, connectivity, geom, alpha=alpha, p=p,parallel=parallel)
+    comps = smoothed_offset_potential(q_vol, mesh, connectivity, geom, alpha=alpha, p=p)
     values = comps.face + comps.edge + comps.vertex
     center = 0.5 * (bounds_min + bounds_max)
     clip_normal = geom.normals[0]
