@@ -28,7 +28,7 @@ singular_value = 1e12
 eps = 1e-12
 
 
-def H(z: ArrayF) -> ArrayF:
+def H_(z: ArrayF) -> ArrayF:
     """Smoothed Heaviside on [-1, 1]."""
 
     z = np.asarray(z, dtype=float)
@@ -40,8 +40,7 @@ def H(z: ArrayF) -> ArrayF:
     out[mask] = ((2.0 - z_mid) * (z_mid + 1.0) ** 2) / 4.0
     return out
 
-# not used
-def H_shifted(z: ArrayF) -> ArrayF:
+def H(z: ArrayF) -> ArrayF:
     """Smoothed Heaviside on [-1, 0]."""
     z = np.asarray(z, dtype=float)
     out = np.empty_like(z, dtype=float)
@@ -66,6 +65,7 @@ def smoothed_offset_potential(
     geom: FaceGeometry,
     alpha: float = 0.1,
     p: float = 2.0,
+    epsilon: float = 0.1,
     include_faces: bool = True,
     include_edges: bool = True,
     include_vertices: bool = True,
@@ -136,7 +136,7 @@ def smoothed_offset_potential(
 
     # sort for determinism, as dict can return in any order
     edges = sorted(connectivity.faces_per_edge.keys())
-    # used to to store Phi^{e,v} values to oass to vertices
+    # used to to store Phi^{v,e} values to oass to vertices
     edge_index = {edge: idx for idx, edge in enumerate(edges)}
     phi_edge_endpoint = np.zeros((len(edges), 2, nq), dtype=float)
 
@@ -153,7 +153,7 @@ def smoothed_offset_potential(
             vec1 = q - p1
             unit0 = vec0 / np.maximum(np.linalg.norm(vec0, axis=1)[:, None], eps)
             unit1 = vec1 / np.maximum(np.linalg.norm(vec1, axis=1)[:, None], eps)
-            # Phi^{e,i}, i=0,1 factors
+            # Phi^{i,e}, i=0,1 factors
             phi0 = np.dot(unit0,d_unit)
             phi1 = np.dot(unit1,-d_unit)
             # save for vertex terms
@@ -205,7 +205,7 @@ def smoothed_offset_potential(
             for edge_key in connectivity.edges_per_vertex[v]:
                 edge_idx = edge_index[edge_key]
                 a, b = edge_key
-                # retrieve relevant Phi^{e,v} term computed for the edge
+                # retrieve relevant Phi^{v,e} term computed for the edge
                 if v == a:
                     h_v = H_alpha(phi_edge_endpoint[edge_idx, 0], alpha)
                 elif v == b:
@@ -221,7 +221,7 @@ def smoothed_offset_potential(
                 else:
                     h_face_1 = H_alpha(phi_face_edge[face_list[1], local_list[1]], alpha)
                 # complete part of the edge directional factor to be used for the vertex
-                # it is different from the complete factor as it only uses h_v = H^alpha(Phi^{e,v})
+                # it is different from the complete factor as it only uses h_v = H^alpha(Phi^{v,e})
                 # for this vertex, not both
                 edge_term += (1.0 - h_face_0 - h_face_1) * h_v
 
