@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from geometry import MeshData, build_connectivity, precompute_face_geometry
+from geometry import MeshData, precompute_face_geometry
 from potential import smoothed_offset_potential
 from viz import sample_volume_grid
 
@@ -16,12 +16,11 @@ def _load_regression():
 
 def _sample_triangle():
     V = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-    F = np.array([[0, 1, 2]], dtype=int)
-    mesh = MeshData(V=V, F=F)
-    conn = build_connectivity(mesh)
+    faces = np.array([[0, 1, 2]], dtype=int)
+    mesh = MeshData(V=V, faces=faces)
     geom = precompute_face_geometry(mesh)
     q = sample_volume_grid(V.min(axis=0) - 0.5, V.max(axis=0) + 0.5, resolution=50)
-    comps = smoothed_offset_potential(q, mesh, conn, geom)
+    comps = smoothed_offset_potential(q, mesh, geom)
     return comps.face + comps.edge + comps.vertex
 
 
@@ -34,12 +33,11 @@ def _sample_tetrahedron_missing_face():
             [0.0, 0.0, 1.0],
         ]
     )
-    F = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 1]], dtype=int)
-    mesh = MeshData(V=V, F=F)
-    conn = build_connectivity(mesh)
+    faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 1]], dtype=int)
+    mesh = MeshData(V=V, faces=faces)
     geom = precompute_face_geometry(mesh)
     q = sample_volume_grid(V.min(axis=0) - 0.5, V.max(axis=0) + 0.5, resolution=50)
-    comps = smoothed_offset_potential(q, mesh, conn, geom)
+    comps = smoothed_offset_potential(q, mesh, geom)
     return comps.face + comps.edge + comps.vertex
 
 

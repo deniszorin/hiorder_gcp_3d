@@ -190,9 +190,8 @@ def isosurface_with_clip(
     except ImportError as exc:  # pragma: no cover - visualization dependency
         raise ImportError("pyvista is required for visualization.") from exc
 
-    from geometry import build_connectivity, precompute_face_geometry
+    from geometry import precompute_face_geometry
 
-    conn = build_connectivity(mesh)
     geom = precompute_face_geometry(mesh)
 
     bounds_min = mesh.V.min(axis=0) - 0.5
@@ -204,7 +203,7 @@ def isosurface_with_clip(
     xx, yy, zz = np.meshgrid(xs, ys, zs, indexing="ij")
     points = np.stack([xx, yy, zz], axis=-1).reshape(-1, 3)
 
-    comps = smoothed_offset_potential(points, mesh, conn, geom)
+    comps = smoothed_offset_potential(points, mesh, geom)
     values = comps.face + comps.edge + comps.vertex
     log_values = np.log10(np.maximum(values, 1e-12))
 
@@ -258,8 +257,8 @@ def build_validation_scenes() -> List[MeshData]:
     scenes: List[MeshData] = []
 
     V = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-    F = np.array([[0, 1, 2]], dtype=int)
-    scenes.append(MeshData(V=V, F=F))
+    faces = np.array([[0, 1, 2]], dtype=int)
+    scenes.append(MeshData(V=V, faces=faces))
 
     V = np.array(
         [
@@ -269,8 +268,8 @@ def build_validation_scenes() -> List[MeshData]:
             [0.0, 0.0, 1.0],
         ]
     )
-    F = np.array([[0, 1, 2], [1, 0, 3]], dtype=int)
-    scenes.append(MeshData(V=V, F=F))
+    faces = np.array([[0, 1, 2], [1, 0, 3]], dtype=int)
+    scenes.append(MeshData(V=V, faces=faces))
 
     center = np.array([0.0, 0.0, 0.0])
     angles = np.linspace(0.0, 2.0 * np.pi, 4, endpoint=False)
@@ -283,13 +282,13 @@ def build_validation_scenes() -> List[MeshData]:
         axis=1,
     )
     V = np.vstack([center, ring])
-    F = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=int)
-    scenes.append(MeshData(V=V, F=F))
+    faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=int)
+    scenes.append(MeshData(V=V, faces=faces))
 
     ring = np.stack([np.cos(angles), np.sin(angles), -np.ones(4)], axis=1)
     V = np.vstack([center, ring])
-    F = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=int)
-    scenes.append(MeshData(V=V, F=F))
+    faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=int)
+    scenes.append(MeshData(V=V, faces=faces))
 
     return scenes
 
@@ -297,7 +296,7 @@ def build_validation_scenes() -> List[MeshData]:
 def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
     """Generate all described visualizations for validation."""
 
-    from geometry import build_connectivity, precompute_face_geometry
+    from geometry import precompute_face_geometry
 
     scenes = build_validation_scenes()
     level_values = [10.0, 100.0, 200.0, 500.0, 1000.0]
@@ -305,7 +304,6 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
     levels_3d = np.log10(level_values)
 
     for idx, mesh in enumerate(scenes):
-        connectivity = build_connectivity(mesh)
         geom = precompute_face_geometry(mesh)
 
         p = mesh.V[0]
@@ -316,7 +314,7 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
         else:
             n = edge_dir / edge_norm
         q_plane = sample_plane_grid(p, n, extent=1.5, resolution=100)
-        comps = smoothed_offset_potential(q_plane, mesh, connectivity, geom)
+        comps = smoothed_offset_potential(q_plane, mesh, geom)
         output_path = None
         if output_dir is not None:
             output_path = f"{output_dir}/scene_{idx}_isolines.png"
@@ -333,7 +331,7 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
         bounds_min = mesh.V.min(axis=0) - 2.0
         bounds_max = mesh.V.max(axis=0) + 2.0
         q_vol = sample_volume_grid(bounds_min, bounds_max, resolution=100)
-        comps = smoothed_offset_potential(q_vol, mesh, connectivity, geom)
+        comps = smoothed_offset_potential(q_vol, mesh, geom)
         output_path = None
         if output_dir is not None:
             output_path = f"{output_dir}/scene_{idx}_isosurface.html"
@@ -466,7 +464,7 @@ def sample_lagrange_patch(
     verts = np.zeros((uv.shape[0], 3), dtype=float)
     for idx, (u, v) in enumerate(uv):
         verts[idx] = _lagrange_triangle_eval(u, v, control_points)
-    return MeshData(V=verts, F=faces)
+    return MeshData(V=verts, faces=faces)
 
 
 def generate_lagrange_patch_samples(
@@ -478,14 +476,13 @@ def generate_lagrange_patch_samples(
     """Generate volumetric samples for a cubic Bezier patch."""
 
     mesh = sample_lagrange_patch(control_points, n)
-    from geometry import build_connectivity, precompute_face_geometry
+    from geometry import precompute_face_geometry
 
-    connectivity = build_connectivity(mesh)
     geom = precompute_face_geometry(mesh)
     bounds_min = mesh.V.min(axis=0) - pad
     bounds_max = mesh.V.max(axis=0) + pad
     q_vol = sample_volume_grid(bounds_min, bounds_max, resolution=resolution)
-    comps = smoothed_offset_potential(q_vol, mesh, connectivity, geom)
+    comps = smoothed_offset_potential(q_vol, mesh, geom)
     values = comps.face + comps.edge + comps.vertex
     return q_vol, values, mesh, geom
 
@@ -540,7 +537,7 @@ def generate_reg_mesh(f, n: int) -> MeshData:
             faces.append([a, b, c])
             faces.append([b, d, c])
 
-    return MeshData(V=np.asarray(verts, dtype=float), F=np.asarray(faces, dtype=int))
+    return MeshData(V=np.asarray(verts, dtype=float), faces=np.asarray(faces, dtype=int))
 
 
 def sample_potential(
@@ -555,9 +552,8 @@ def sample_potential(
 ):
     """Sample potential on a regular grid and return samples plus clip params."""
 
-    from geometry import build_connectivity, precompute_face_geometry
+    from geometry import precompute_face_geometry
 
-    connectivity = build_connectivity(mesh)
     geom = precompute_face_geometry(mesh)
 
     bounds_min = mesh.V.min(axis=0)
@@ -575,7 +571,7 @@ def sample_potential(
         bounds_min[2], bounds_max[2] = float(zrange[0]), float(zrange[1])
 
     q_vol = sample_volume_grid(bounds_min, bounds_max, resolution=resolution)
-    comps = smoothed_offset_potential(q_vol, mesh, connectivity, geom, alpha=alpha, p=p)
+    comps = smoothed_offset_potential(q_vol, mesh, geom, alpha=alpha, p=p)
     values = comps.face + comps.edge + comps.vertex
     center = 0.5 * (bounds_min + bounds_max)
     clip_normal = geom.normals[0]

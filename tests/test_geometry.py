@@ -17,8 +17,8 @@ def _mesh_single_triangle():
             [0.0, 1.0, 0.0],
         ]
     )
-    F = np.array([[0, 1, 2]], dtype=int)
-    return geometry.MeshData(V=V, F=F)
+    faces = np.array([[0, 1, 2]], dtype=int)
+    return geometry.MeshData(V=V, faces=faces)
 
 
 def _mesh_tetrahedron():
@@ -30,7 +30,7 @@ def _mesh_tetrahedron():
             [0.0, 0.0, 1.0],
         ]
     )
-    F = np.array(
+    faces = np.array(
         [
             [0, 1, 2],
             [0, 2, 3],
@@ -39,41 +39,38 @@ def _mesh_tetrahedron():
         ],
         dtype=int,
     )
-    return geometry.MeshData(V=V, F=F)
+    return geometry.MeshData(V=V, faces=faces)
 
 
 def _mesh_tetrahedron_missing_face():
     mesh = _mesh_tetrahedron()
-    F = mesh.F[:-1]
-    return geometry.MeshData(V=mesh.V, F=F)
+    faces = mesh.faces[:-1]
+    return geometry.MeshData(V=mesh.V, faces=faces)
 
 
 def test_build_connectivity_single_triangle():
     mesh = _mesh_single_triangle()
-    conn = geometry.build_connectivity(mesh)
-    assert len(conn.vertices_to_faces) == 3
-    assert all(len(faces) == 1 for faces in conn.vertices_to_faces)
-    assert len(conn.edges_to_faces) == 3
-    assert all(len(faces) == 1 for faces in conn.edges_to_faces)
-    assert len(conn.vertices_to_edges) == 3
-    assert all(len(edges) == 2 for edges in conn.vertices_to_edges)
+    assert len(mesh.vertices_to_faces) == 3
+    assert all(len(faces) == 1 for faces in mesh.vertices_to_faces)
+    assert len(mesh.edges_to_faces) == 3
+    assert all(len(faces) == 1 for faces in mesh.edges_to_faces)
+    assert len(mesh.vertices_to_edges) == 3
+    assert all(len(edges) == 2 for edges in mesh.vertices_to_edges)
 
 
 def test_build_connectivity_tetrahedron():
     mesh = _mesh_tetrahedron()
-    conn = geometry.build_connectivity(mesh)
-    assert all(len(faces) == 3 for faces in conn.vertices_to_faces)
-    assert all(len(faces) == 2 for faces in conn.edges_to_faces)
-    assert all(len(edges) == 3 for edges in conn.vertices_to_edges)
+    assert all(len(faces) == 3 for faces in mesh.vertices_to_faces)
+    assert all(len(faces) == 2 for faces in mesh.edges_to_faces)
+    assert all(len(edges) == 3 for edges in mesh.vertices_to_edges)
 
 
 def test_build_connectivity_tetrahedron_missing_face():
     mesh = _mesh_tetrahedron_missing_face()
-    conn = geometry.build_connectivity(mesh)
-    face_counts = [len(faces) for faces in conn.vertices_to_faces]
+    face_counts = [len(faces) for faces in mesh.vertices_to_faces]
     assert face_counts.count(3) == 1
     assert face_counts.count(2) == 3
-    edge_counts = [len(faces) for faces in conn.edges_to_faces]
+    edge_counts = [len(faces) for faces in mesh.edges_to_faces]
     assert edge_counts.count(1) == 3
     assert edge_counts.count(2) == 3
 
@@ -114,9 +111,9 @@ def test_load_obj_mesh_libigl_triangle(tmp_path: Path):
 
     mesh = load_obj_mesh(str(obj_path))
     assert mesh.V.shape == (3, 3)
-    assert mesh.F.shape == (1, 3)
+    assert mesh.faces.shape == (1, 3)
     assert np.allclose(mesh.V[1], [1.0, 0.0, 0.0])
-    assert np.all(mesh.F[0] == np.array([0, 1, 2]))
+    assert np.all(mesh.faces[0] == np.array([0, 1, 2]))
 
 
 def test_load_obj_mesh_libigl():
@@ -125,5 +122,5 @@ def test_load_obj_mesh_libigl():
     obj_path = Path(__file__).resolve().parent / "Bunny-LowPoly.obj"
     mesh = load_obj_mesh(str(obj_path))
     assert mesh.V.shape[0] > 0
-    assert mesh.F.shape[0] > 0
-    assert mesh.F.shape[1] == 3
+    assert mesh.faces.shape[0] > 0
+    assert mesh.faces.shape[1] == 3

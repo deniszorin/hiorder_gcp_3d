@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from geometry import FaceGeometry, MeshConnectivity, MeshData
+from geometry import FaceGeometry, MeshData
 
 
 ArrayF = np.ndarray
@@ -66,11 +66,11 @@ def H_alpha_shifted(t: ArrayF, alpha: float) -> ArrayF:
     return H_shifted(np.asarray(t, dtype=float) / alpha)
 
 
-def get_local_index(eidx: int, fidx: int, mesh: MeshData, connectivity: MeshConnectivity) -> int:
+def get_local_index(eidx: int, fidx: int, mesh: MeshData) -> int:
     """Return the local edge index within face fidx for edge eidx."""
 
-    v0, v1 = connectivity.edges[eidx]
-    f0, f1, f2 = mesh.F[fidx].tolist()
+    v0, v1 = mesh.edges[eidx]
+    f0, f1, f2 = mesh.faces[fidx].tolist()
     face_edges = [(f0, f1), (f1, f2), (f2, f0)]
     for local_idx, (a, b) in enumerate(face_edges):
         if (a == v0 and b == v1) or (a == v1 and b == v0):
@@ -81,7 +81,6 @@ def get_local_index(eidx: int, fidx: int, mesh: MeshData, connectivity: MeshConn
 def smoothed_offset_potential(
     q: ArrayF,
     mesh: MeshData,
-    connectivity: MeshConnectivity,
     geom: FaceGeometry,
     alpha: float = 0.1,
     p: float = 2.0,
@@ -100,9 +99,9 @@ def smoothed_offset_potential(
         raise ValueError("q must have shape (3,) or (nq, 3).")
 
     V = mesh.V
-    F = mesh.F
+    faces = mesh.faces
     nq = q.shape[0]
-    nf = F.shape[0]
+    nf = faces.shape[0]
 
     # will store potential components here
     face_sum = np.zeros(nq, dtype=float)
@@ -117,7 +116,7 @@ def smoothed_offset_potential(
 
     #  compute face directional terms and face potenials, save dir. terms for edges and vertices
     for f in range(nf):
-        v0, v1, v2 = F[f].tolist()
+        v0, v1, v2 = faces[f].tolist()
         edge_origins = [V[v0], V[v1], V[v2]]
 
         n = geom.normals[f]
@@ -155,15 +154,13 @@ def smoothed_offset_potential(
             face_sum += I_f
 
     # edges are indexed, no dict ordering concerns
-    edges = list(range(len(connectivity.edges)))
+    edges = list(range(len(mesh.edges)))
     phi_edge_endpoint = np.zeros((len(edges), 2, nq), dtype=float)
 
     # compute edge directional terms, and edge potentials save for vertices
     for edge_idx in edges:
-        # over all edg indices
-        # p0 = V[edges[eidx][0]]
-        # p1 = V[edges[eidx][1]]
-        a, b = connectivity.edges[edge_idx]
+        # over all edge indices
+        a, b = mesh.edges[edge_idx]
         p0 = V[a]
         p1 = V[b]
         d = p1 - p0
@@ -182,32 +179,24 @@ def smoothed_offset_potential(
         phi_edge_endpoint[edge_idx, 0] = phi0
         phi_edge_endpoint[edge_idx, 1] = phi1
 
-        # face_list = m_edges_to_faces[eidx]
-        # local_list = [get_edge_index(face_list[0]),get_edge_index(face_list[1]) ]
-        face_list = connectivity.edges_to_faces[edge_idx]
+        face_list = mesh.edges_to_faces[edge_idx]
 
-        if len(face_list) == 0:
-            h_face_0 = np.zeros(nq, dtype=float)
+        f0 = face_list[0]
+        e0 = get_local_index(edge_idx, f0, mesh)
+        h_face_0 = H_alpha(phi_face_edge[f0, e0], alpha)
+        if len(face_list) == 1:
             h_face_1 = np.zeros(nq, dtype=float)
         else:
-            f0 = face_list[0]
-            e0 = get_local_index(edge_idx, f0, mesh, connectivity)
-            h_face_0 = H_alpha(phi_face_edge[f0, e0], alpha)
-            if len(face_list) == 1:
-                h_face_1 = np.zeros(nq, dtype=float)
-            else:
-                f1 = face_list[1]
-                e1 = get_local_index(edge_idx, f1, mesh, connectivity)
-                h_face_1 = H_alpha(phi_face_edge[f1, e1], alpha)
+            f1 = face_list[1]
+            e1 = get_local_index(edge_idx, f1, mesh)
+            h_face_1 = H_alpha(phi_face_edge[f1, e1], alpha)
 
         B_edge = (1.0 - h_face_0 - h_face_1) * H_alpha(phi0, alpha) * H_alpha(phi1, alpha)
 
         if include_edges:
             # distance to edge r_e already computed for face terms
-            if not face_list:
-                raise ValueError(f"Missing face-edge mapping for edge {edge_idx}.")
             f_idx = face_list[0]
-            local_edge = get_local_index(edge_idx, f_idx, mesh, connectivity)
+            local_edge = get_local_index(edge_idx, f_idx, mesh)
             r_e = r_e_face_edge[f_idx, local_edge]
             denom = np.power(r_e, p)
             I_e = np.where(r_e <= eps, singular_value, B_edge / denom)
@@ -219,9 +208,9 @@ def smoothed_offset_potential(
             r_v = np.linalg.norm(q_to_v, axis=1)
 
             face_term = np.zeros(nq, dtype=float)
-            for f in connectivity.vertices_to_faces[v]:
+            for f in mesh.vertices_to_faces[v]:
                 # which local edges are incident at the vertex in face f?
-                v0, v1, v2 = F[f].tolist()
+                v0, v1, v2 = faces[f].tolist()
                 if v == v0:
                     e0, e1 = 0, 2
                 elif v == v1:
@@ -238,9 +227,9 @@ def smoothed_offset_potential(
 
             edge_term = np.zeros(nq, dtype=float)
             # for eidx in m_vertices_to_edges
-            for edge_idx in connectivity.vertices_to_edges[v]:
+            for edge_idx in mesh.vertices_to_edges[v]:
                 # nop
-                a, b = connectivity.edges[edge_idx]
+                a, b = mesh.edges[edge_idx]
 
                 # retrieve relevant Phi^{v,e} term computed for the edge
                 if v == a:
@@ -251,22 +240,16 @@ def smoothed_offset_potential(
                     raise ValueError("Vertex not found in edge.")
                 # retrive face terms that were used for the edge
 
-                # face_list = m_edges_to_faces[eidx]
-                # local_list = [get_edge_index(face_list[0]),get_edge_index(face_list[1]) ]
-                face_list = connectivity.edges_to_faces[edge_idx]
-                if len(face_list) == 0:
-                    h_face_0 = np.zeros(nq, dtype=float)
+                face_list = mesh.edges_to_faces[edge_idx]
+                f0 = face_list[0]
+                e0 = get_local_index(edge_idx, f0, mesh)
+                h_face_0 = H_alpha(phi_face_edge[f0, e0], alpha)
+                if len(face_list) == 1:
                     h_face_1 = np.zeros(nq, dtype=float)
                 else:
-                    f0 = face_list[0]
-                    e0 = get_local_index(edge_idx, f0, mesh, connectivity)
-                    h_face_0 = H_alpha(phi_face_edge[f0, e0], alpha)
-                    if len(face_list) == 1:
-                        h_face_1 = np.zeros(nq, dtype=float)
-                    else:
-                        f1 = face_list[1]
-                        e1 = get_local_index(edge_idx, f1, mesh, connectivity)
-                        h_face_1 = H_alpha(phi_face_edge[f1, e1], alpha)
+                    f1 = face_list[1]
+                    e1 = get_local_index(edge_idx, f1, mesh)
+                    h_face_1 = H_alpha(phi_face_edge[f1, e1], alpha)
                 # complete part of the edge directional factor to be used for the vertex
                 # it is different from the complete factor as it only uses h_v = H^alpha(Phi^{v,e})
                 # for this vertex, not both

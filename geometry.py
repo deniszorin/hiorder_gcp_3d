@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 import numpy as np
@@ -14,30 +14,29 @@ ArrayI = np.ndarray
 
 @dataclass(frozen=True)
 class MeshData:
-    """Raw mesh data.
+    """Mesh data with indexed connectivity.
 
     V: (N, 3) float array of vertex positions.
-    F: (M, 3) int array of face indices (CCW order).
-    """
-
-    V: ArrayF
-    F: ArrayI
-
-
-@dataclass(frozen=True)
-class MeshConnectivity:
-    """Connectivity maps built from MeshData.
-
+    faces: (M, 3) int array of face indices (CCW order).
     edges: edge index -> [v0, v1]
     vertices_to_faces: vertex index -> list of adjacent face indices
     edges_to_faces: edge index -> list of incident face indices
     vertices_to_edges: vertex index -> list of incident edge indices
     """
 
-    edges: List[List[int]]
-    vertices_to_faces: List[List[int]]
-    edges_to_faces: List[List[int]]
-    vertices_to_edges: List[List[int]]
+    V: ArrayF
+    faces: ArrayI
+    edges: List[List[int]] = field(init=False)
+    vertices_to_faces: List[List[int]] = field(init=False)
+    edges_to_faces: List[List[int]] = field(init=False)
+    vertices_to_edges: List[List[int]] = field(init=False)
+
+    def __post_init__(self) -> None:
+        edges, vertices_to_faces, edges_to_faces, vertices_to_edges = build_connectivity(self)
+        object.__setattr__(self, "edges", edges)
+        object.__setattr__(self, "vertices_to_faces", vertices_to_faces)
+        object.__setattr__(self, "edges_to_faces", edges_to_faces)
+        object.__setattr__(self, "vertices_to_edges", vertices_to_edges)
 
 
 @dataclass(frozen=True)
@@ -63,14 +62,19 @@ def load_obj_mesh(path: str) -> MeshData:
         raise ImportError("libigl is required to load OBJ meshes here.") from exc
 
     v, f = igl.read_triangle_mesh(path)
-    return MeshData(V=np.asarray(v, dtype=float), F=np.asarray(f, dtype=int))
+    return MeshData(V=np.asarray(v, dtype=float), faces=np.asarray(f, dtype=int))
 
 
-def build_connectivity(mesh: MeshData) -> MeshConnectivity:
+def build_connectivity(mesh: MeshData) -> tuple[
+    List[List[int]],
+    List[List[int]],
+    List[List[int]],
+    List[List[int]],
+]:
     """Build connectivity maps using indexed edges."""
 
     nv = mesh.V.shape[0]
-    nf = mesh.F.shape[0]
+    nf = mesh.faces.shape[0]
     vertices_to_faces: List[List[int]] = [[] for _ in range(nv)]
     vertices_to_edges: List[List[int]] = [[] for _ in range(nv)]
 
@@ -79,7 +83,7 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
     edge_index = {}
 
     for f in range(nf):
-        v0, v1, v2 = mesh.F[f].tolist()
+        v0, v1, v2 = mesh.faces[f].tolist()
         vertices_to_faces[v0].append(f)
         vertices_to_faces[v1].append(f)
         vertices_to_faces[v2].append(f)
@@ -106,27 +110,22 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
                 if eidx not in vertices_to_edges[v]:
                     vertices_to_edges[v].append(eidx)
 
-    return MeshConnectivity(
-        edges=edges,
-        vertices_to_faces=vertices_to_faces,
-        edges_to_faces=edges_to_faces,
-        vertices_to_edges=vertices_to_edges,
-    )
+    return edges, vertices_to_faces, edges_to_faces, vertices_to_edges
 
 
 def precompute_face_geometry(mesh: MeshData) -> FaceGeometry:
     """Precompute per-face geometry used by potentials."""
 
     V = mesh.V
-    F = mesh.F
-    nf = F.shape[0]
+    faces = mesh.faces
+    nf = faces.shape[0]
 
     normals = np.zeros((nf, 3), dtype=float)
     edge_dirs = np.zeros((nf, 3, 3), dtype=float)
     edge_inward = np.zeros((nf, 3, 3), dtype=float)
 
     for f in range(nf):
-        v0, v1, v2 = F[f].tolist()
+        v0, v1, v2 = faces[f].tolist()
         p0 = V[v0]
         p1 = V[v1]
         p2 = V[v2]
