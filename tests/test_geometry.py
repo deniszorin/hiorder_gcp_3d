@@ -54,7 +54,7 @@ def test_build_connectivity_single_triangle():
     assert len(conn.faces_per_vertex) == 3
     assert all(len(faces) == 1 for faces in conn.faces_per_vertex)
     assert len(conn.faces_per_edge) == 3
-    assert all(len(faces) == 1 for faces in conn.faces_per_edge.values())
+    assert all(len(faces) == 1 for faces in conn.faces_per_edge)
     assert len(conn.edges_per_vertex) == 3
     assert all(len(edges) == 2 for edges in conn.edges_per_vertex)
 
@@ -63,7 +63,7 @@ def test_build_connectivity_tetrahedron():
     mesh = _mesh_tetrahedron()
     conn = geometry.build_connectivity(mesh)
     assert all(len(faces) == 3 for faces in conn.faces_per_vertex)
-    assert all(len(faces) == 2 for faces in conn.faces_per_edge.values())
+    assert all(len(faces) == 2 for faces in conn.faces_per_edge)
     assert all(len(edges) == 3 for edges in conn.edges_per_vertex)
 
 
@@ -73,7 +73,7 @@ def test_build_connectivity_tetrahedron_missing_face():
     face_counts = [len(faces) for faces in conn.faces_per_vertex]
     assert face_counts.count(3) == 1
     assert face_counts.count(2) == 3
-    edge_counts = [len(faces) for faces in conn.faces_per_edge.values()]
+    edge_counts = [len(faces) for faces in conn.faces_per_edge]
     assert edge_counts.count(1) == 3
     assert edge_counts.count(2) == 3
 

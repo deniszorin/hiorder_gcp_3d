@@ -1,16 +1,15 @@
-"""Geometry and mesh connectivity helpers (skeleton)."""
+"""Geometry and mesh connectivity helpers using indexed edges."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import List
 
 import numpy as np
 
 
 ArrayF = np.ndarray
 ArrayI = np.ndarray
-EdgeKey = Tuple[int, int]
 
 
 @dataclass(frozen=True)
@@ -20,6 +19,7 @@ class MeshData:
     V: (N, 3) float array of vertex positions.
     F: (M, 3) int array of face indices (CCW order).
     """
+
     V: ArrayF
     F: ArrayI
 
@@ -28,24 +28,27 @@ class MeshData:
 class MeshConnectivity:
     """Connectivity maps built from MeshData.
 
-    faces_per_vertex: list of face indices for each vertex.
-    faces_per_edge: dict edge -> list of incident face indices.
-    edges_per_vertex: list of edges (as sorted index pairs) for each vertex.
-    edge_local_indices: dict edge -> list of local edge indices per incident face.
+    vertices_per_edge: edge index -> [v0, v1]
+    faces_per_vertex: vertex index -> list of adjacent face indices
+    faces_per_edge: edge index -> list of incident face indices
+    edges_per_vertex: vertex index -> list of incident edge indices
     """
+
+    vertices_per_edge: List[List[int]]
     faces_per_vertex: List[List[int]]
-    faces_per_edge: Dict[EdgeKey, List[int]]
-    edges_per_vertex: List[List[EdgeKey]]
-    edge_local_indices: Dict[EdgeKey, List[int]]
+    faces_per_edge: List[List[int]]
+    edges_per_vertex: List[List[int]]
 
 
 @dataclass(frozen=True)
 class FaceGeometry:
     """Per-face geometry for fast evaluation.
+
     normals: (M, 3) unit normals.
     edge_dirs: (M, 3, 3) edge direction unit vectors for edges (v0->v1, v1->v2, v2->v0).
     edge_inward: (M, 3, 3) inward edge normals (n x d_e).
     """
+
     normals: ArrayF
     edge_dirs: ArrayF
     edge_inward: ArrayF
@@ -64,15 +67,16 @@ def load_obj_mesh(path: str) -> MeshData:
 
 
 def build_connectivity(mesh: MeshData) -> MeshConnectivity:
-    """Build connectivity maps for vertices and edges."""
+    """Build connectivity maps using indexed edges."""
 
     nv = mesh.V.shape[0]
     nf = mesh.F.shape[0]
     faces_per_vertex: List[List[int]] = [[] for _ in range(nv)]
-    faces_per_edge: Dict[EdgeKey, List[int]] = {}
-    edge_local_indices: Dict[EdgeKey, List[int]] = {}
-    edges_per_vertex: List[List[EdgeKey]] = [[] for _ in range(nv)]
-    edges_per_vertex_set: List[set[EdgeKey]] = [set() for _ in range(nv)]
+    edges_per_vertex: List[List[int]] = [[] for _ in range(nv)]
+
+    vertices_per_edge: List[List[int]] = []
+    faces_per_edge: List[List[int]] = []
+    edge_index = {}
 
     for f in range(nf):
         v0, v1, v2 = mesh.F[f].tolist()
@@ -80,11 +84,15 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
         faces_per_vertex[v1].append(f)
         faces_per_vertex[v2].append(f)
 
-        edges = [(v0, v1), (v1, v2), (v2, v0)]
-        for local_idx, (a, b) in enumerate(edges):
+        face_edges = [(v0, v1), (v1, v2), (v2, v0)]
+        for a, b in face_edges:
             key = (a, b) if a < b else (b, a)
-            faces_per_edge.setdefault(key, []).append(f)
-            edge_local_indices.setdefault(key, []).append(local_idx)
+            if key not in edge_index:
+                edge_index[key] = len(vertices_per_edge)
+                vertices_per_edge.append([key[0], key[1]])
+                faces_per_edge.append([])
+            eidx = edge_index[key]
+            faces_per_edge[eidx].append(f)
 
         per_vertex_edges = {
             v0: [(v0, v1), (v0, v2)],
@@ -94,15 +102,15 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
         for v, edge_pairs in per_vertex_edges.items():
             for a, b in edge_pairs:
                 key = (a, b) if a < b else (b, a)
-                if key not in edges_per_vertex_set[v]:
-                    edges_per_vertex_set[v].add(key)
-                    edges_per_vertex[v].append(key)
+                eidx = edge_index[key]
+                if eidx not in edges_per_vertex[v]:
+                    edges_per_vertex[v].append(eidx)
 
     return MeshConnectivity(
+        vertices_per_edge=vertices_per_edge,
         faces_per_vertex=faces_per_vertex,
         faces_per_edge=faces_per_edge,
         edges_per_vertex=edges_per_vertex,
-        edge_local_indices=edge_local_indices,
     )
 
 
