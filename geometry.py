@@ -28,16 +28,16 @@ class MeshData:
 class MeshConnectivity:
     """Connectivity maps built from MeshData.
 
-    vertices_per_edge: edge index -> [v0, v1]
-    faces_per_vertex: vertex index -> list of adjacent face indices
-    faces_per_edge: edge index -> list of incident face indices
-    edges_per_vertex: vertex index -> list of incident edge indices
+    edges: edge index -> [v0, v1]
+    vertices_to_faces: vertex index -> list of adjacent face indices
+    edges_to_faces: edge index -> list of incident face indices
+    vertices_to_edges: vertex index -> list of incident edge indices
     """
 
-    vertices_per_edge: List[List[int]]
-    faces_per_vertex: List[List[int]]
-    faces_per_edge: List[List[int]]
-    edges_per_vertex: List[List[int]]
+    edges: List[List[int]]
+    vertices_to_faces: List[List[int]]
+    edges_to_faces: List[List[int]]
+    vertices_to_edges: List[List[int]]
 
 
 @dataclass(frozen=True)
@@ -71,28 +71,28 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
 
     nv = mesh.V.shape[0]
     nf = mesh.F.shape[0]
-    faces_per_vertex: List[List[int]] = [[] for _ in range(nv)]
-    edges_per_vertex: List[List[int]] = [[] for _ in range(nv)]
+    vertices_to_faces: List[List[int]] = [[] for _ in range(nv)]
+    vertices_to_edges: List[List[int]] = [[] for _ in range(nv)]
 
-    vertices_per_edge: List[List[int]] = []
-    faces_per_edge: List[List[int]] = []
+    edges: List[List[int]] = []
+    edges_to_faces: List[List[int]] = []
     edge_index = {}
 
     for f in range(nf):
         v0, v1, v2 = mesh.F[f].tolist()
-        faces_per_vertex[v0].append(f)
-        faces_per_vertex[v1].append(f)
-        faces_per_vertex[v2].append(f)
+        vertices_to_faces[v0].append(f)
+        vertices_to_faces[v1].append(f)
+        vertices_to_faces[v2].append(f)
 
         face_edges = [(v0, v1), (v1, v2), (v2, v0)]
         for a, b in face_edges:
             key = (a, b) if a < b else (b, a)
             if key not in edge_index:
-                edge_index[key] = len(vertices_per_edge)
-                vertices_per_edge.append([key[0], key[1]])
-                faces_per_edge.append([])
+                edge_index[key] = len(edges)
+                edges.append([key[0], key[1]])
+                edges_to_faces.append([])
             eidx = edge_index[key]
-            faces_per_edge[eidx].append(f)
+            edges_to_faces[eidx].append(f)
 
         per_vertex_edges = {
             v0: [(v0, v1), (v0, v2)],
@@ -103,14 +103,14 @@ def build_connectivity(mesh: MeshData) -> MeshConnectivity:
             for a, b in edge_pairs:
                 key = (a, b) if a < b else (b, a)
                 eidx = edge_index[key]
-                if eidx not in edges_per_vertex[v]:
-                    edges_per_vertex[v].append(eidx)
+                if eidx not in vertices_to_edges[v]:
+                    vertices_to_edges[v].append(eidx)
 
     return MeshConnectivity(
-        vertices_per_edge=vertices_per_edge,
-        faces_per_vertex=faces_per_vertex,
-        faces_per_edge=faces_per_edge,
-        edges_per_vertex=edges_per_vertex,
+        edges=edges,
+        vertices_to_faces=vertices_to_faces,
+        edges_to_faces=edges_to_faces,
+        vertices_to_edges=vertices_to_edges,
     )
 
 

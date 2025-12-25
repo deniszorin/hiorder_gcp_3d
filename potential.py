@@ -69,7 +69,7 @@ def H_alpha_shifted(t: ArrayF, alpha: float) -> ArrayF:
 def get_local_index(eidx: int, fidx: int, mesh: MeshData, connectivity: MeshConnectivity) -> int:
     """Return the local edge index within face fidx for edge eidx."""
 
-    v0, v1 = connectivity.vertices_per_edge[eidx]
+    v0, v1 = connectivity.edges[eidx]
     f0, f1, f2 = mesh.F[fidx].tolist()
     face_edges = [(f0, f1), (f1, f2), (f2, f0)]
     for local_idx, (a, b) in enumerate(face_edges):
@@ -155,7 +155,7 @@ def smoothed_offset_potential(
             face_sum += I_f
 
     # edges are indexed, no dict ordering concerns
-    edges = list(range(len(connectivity.vertices_per_edge)))
+    edges = list(range(len(connectivity.edges)))
     phi_edge_endpoint = np.zeros((len(edges), 2, nq), dtype=float)
 
     # compute edge directional terms, and edge potentials save for vertices
@@ -163,7 +163,7 @@ def smoothed_offset_potential(
         # over all edg indices
         # p0 = V[edges[eidx][0]]
         # p1 = V[edges[eidx][1]]
-        a, b = connectivity.vertices_per_edge[edge_idx]
+        a, b = connectivity.edges[edge_idx]
         p0 = V[a]
         p1 = V[b]
         d = p1 - p0
@@ -184,7 +184,7 @@ def smoothed_offset_potential(
 
         # face_list = m_edges_to_faces[eidx]
         # local_list = [get_edge_index(face_list[0]),get_edge_index(face_list[1]) ]
-        face_list = connectivity.faces_per_edge[edge_idx]
+        face_list = connectivity.edges_to_faces[edge_idx]
 
         if len(face_list) == 0:
             h_face_0 = np.zeros(nq, dtype=float)
@@ -219,7 +219,7 @@ def smoothed_offset_potential(
             r_v = np.linalg.norm(q_to_v, axis=1)
 
             face_term = np.zeros(nq, dtype=float)
-            for f in connectivity.faces_per_vertex[v]:
+            for f in connectivity.vertices_to_faces[v]:
                 # which local edges are incident at the vertex in face f?
                 v0, v1, v2 = F[f].tolist()
                 if v == v0:
@@ -238,9 +238,9 @@ def smoothed_offset_potential(
 
             edge_term = np.zeros(nq, dtype=float)
             # for eidx in m_vertices_to_edges
-            for edge_idx in connectivity.edges_per_vertex[v]:
+            for edge_idx in connectivity.vertices_to_edges[v]:
                 # nop
-                a, b = connectivity.vertices_per_edge[edge_idx]
+                a, b = connectivity.edges[edge_idx]
 
                 # retrieve relevant Phi^{v,e} term computed for the edge
                 if v == a:
@@ -253,7 +253,7 @@ def smoothed_offset_potential(
 
                 # face_list = m_edges_to_faces[eidx]
                 # local_list = [get_edge_index(face_list[0]),get_edge_index(face_list[1]) ]
-                face_list = connectivity.faces_per_edge[edge_idx]
+                face_list = connectivity.edges_to_faces[edge_idx]
                 if len(face_list) == 0:
                     h_face_0 = np.zeros(nq, dtype=float)
                     h_face_1 = np.zeros(nq, dtype=float)
