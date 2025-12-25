@@ -28,7 +28,7 @@ singular_value = 1e12
 eps = 1e-12
 
 
-def H_(z: ArrayF) -> ArrayF:
+def H(z: ArrayF) -> ArrayF:
     """Smoothed Heaviside on [-1, 1]."""
 
     z = np.asarray(z, dtype=float)
@@ -41,7 +41,7 @@ def H_(z: ArrayF) -> ArrayF:
     return out
 
 
-def H(z: ArrayF) -> ArrayF:
+def H_shifted(z: ArrayF) -> ArrayF:
     """Smoothed Heaviside on [-1, 0]."""
 
     z = np.asarray(z, dtype=float)
@@ -58,6 +58,12 @@ def H_alpha(t: ArrayF, alpha: float) -> ArrayF:
     """Scaled Heaviside H(t / alpha)."""
 
     return H(np.asarray(t, dtype=float) / alpha)
+
+
+def H_alpha_shifted(t: ArrayF, alpha: float) -> ArrayF:
+    """Scaled shifted Heaviside H_shifted(t / alpha)."""
+
+    return H_shifted(np.asarray(t, dtype=float) / alpha)
 
 
 def get_local_index(eidx: int, fidx: int, mesh: MeshData, connectivity: MeshConnectivity) -> int:
