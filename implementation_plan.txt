@@ -109,3 +109,12 @@ Using obj format.
   - Construct geometry as described (alternating z +/-, center z = 0).
   - Vertex potential isosurface.
 - Variant: all neighbor z negative (center at 0).
+
+C++ implementation plan
+1) Create a stripped-down `CollisionMesh` in `cpp/` with only Eigen + `eigen_ext.hpp`
+   - Keep rest positions, edges, faces, adjacency (faces/edges/vertices), and boundary flags.
+   - Remove all legacy full-mesh/selection/area/adjacency infrastructure.
+   - Add a simple factory constructor for building the mesh.
+2) Reimplement `potential.py` logic in C++ using the stripped `CollisionMesh`.
+3) Add a Python wrapper to call the C++ potential on lists of query points.
+4) Validate results against the Python implementation.

@@ -203,8 +203,7 @@ def isosurface_with_clip(
     xx, yy, zz = np.meshgrid(xs, ys, zs, indexing="ij")
     points = np.stack([xx, yy, zz], axis=-1).reshape(-1, 3)
 
-    comps = smoothed_offset_potential(points, mesh, geom)
-    values = comps.face + comps.edge + comps.vertex
+    values = smoothed_offset_potential(points, mesh, geom)
     log_values = np.log10(np.maximum(values, 1e-12))
 
     grid = pv.ImageData()
@@ -314,11 +313,10 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
         else:
             n = edge_dir / edge_norm
         q_plane = sample_plane_grid(p, n, extent=1.5, resolution=100)
-        comps = smoothed_offset_potential(q_plane, mesh, geom)
+        values = smoothed_offset_potential(q_plane, mesh, geom)
         output_path = None
         if output_dir is not None:
             output_path = f"{output_dir}/scene_{idx}_isolines.png"
-        values = comps.face + comps.edge + comps.vertex
         log_values = np.log10(np.maximum(values, 1e-12))
         visualize_isolines_on_plane(
             q_plane,
@@ -331,7 +329,7 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
         bounds_min = mesh.V.min(axis=0) - 2.0
         bounds_max = mesh.V.max(axis=0) + 2.0
         q_vol = sample_volume_grid(bounds_min, bounds_max, resolution=100)
-        comps = smoothed_offset_potential(q_vol, mesh, geom)
+        values = smoothed_offset_potential(q_vol, mesh, geom)
         output_path = None
         if output_dir is not None:
             output_path = f"{output_dir}/scene_{idx}_isosurface.html"
@@ -339,7 +337,7 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
         clip_normal = geom.normals[0]
         visualize_isosurface(
             q_vol,
-            comps.face + comps.edge + comps.vertex,
+            values,
             resolution=100,
             levels=levels_3d,
             clip_origin=center,

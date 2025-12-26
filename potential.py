@@ -2,27 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from geometry import FaceGeometry, MeshData
 
 
 ArrayF = np.ndarray
-
-
-@dataclass(frozen=True)
-class PotentialComponents:
-    """Potential components at q points.
-
-    Each array is shape (nq,).
-    """
-
-    face: ArrayF
-    edge: ArrayF
-    vertex: ArrayF
-
 
 singular_value = 1e12
 eps = 1e-12
@@ -66,6 +51,18 @@ def H_alpha_shifted(t: ArrayF, alpha: float) -> ArrayF:
     return H_shifted(np.asarray(t, dtype=float) / alpha)
 
 
+def h_local(z: ArrayF) -> ArrayF:
+    """Localization polynomial h(z) = (2z + 1)(z - 1)^2."""
+
+    z = np.asarray(z, dtype=float)
+    return (2.0 * z + 1.0) * (z - 1.0) ** 2
+
+
+def h_epsilon(z: ArrayF, epsilon: float) -> ArrayF:
+    """Scaled localization polynomial h(z / epsilon)."""
+    return h_local(np.asarray(z, dtype=float) / epsilon)
+
+
 def get_local_index(eidx: int, fidx: int, mesh: MeshData) -> int:
     """Return the local edge index within face fidx for edge eidx."""
 
@@ -88,8 +85,10 @@ def smoothed_offset_potential(
     include_faces: bool = True,
     include_edges: bool = True,
     include_vertices: bool = True,
-) -> PotentialComponents:
-    """Compute smoothed offset potential components at q points."""
+    localized: bool = False,
+    one_sided: bool = False
+) -> ArrayF:
+    """Compute smoothed offset potential at q points."""
 
     # maker it work for a single input point
     q = np.asarray(q, dtype=float)
@@ -110,9 +109,9 @@ def smoothed_offset_potential(
 
     r_e_face_edge = np.zeros((nf, 3, nq), dtype=float)
     phi_face_edge = np.zeros((nf, 3, nq), dtype=float)
-
+    
     if not (include_faces or include_edges or include_vertices):
-        return PotentialComponents(face_sum, edge_sum, vertex_sum)
+        return face_sum
 
     #  compute face directional terms and face potenials, save dir. terms for edges and vertices
     for f in range(nf):
@@ -120,6 +119,8 @@ def smoothed_offset_potential(
         edge_origins = [V[v0], V[v1], V[v2]]
 
         n = geom.normals[f]
+        r_f = np.dot(q - edge_origins[0], n)
+        r_f_abs = np.abs(r_f)
         # unit vectors along edges, ccw around a face
         edge_dirs = geom.edge_dirs[f]
         # unit vectors pointing towards face interior
@@ -130,8 +131,7 @@ def smoothed_offset_potential(
         for i in range(3):
             # distance from edge first endpoint to projection of q
             t = np.dot(q - edge_origins[i], edge_dirs[i])
-            # projection of q position
-            # P_e[j] = edge_origin[i] + t[j]*edge_dirs[i]
+            # position of the projection of q 
             P_e = edge_origins[i] + np.outer(t, edge_dirs[i])
             vec = q - P_e
             # distance from q to edge i
@@ -145,12 +145,12 @@ def smoothed_offset_potential(
             phi_face_edge[f, i] = phi
 
         if include_faces:
-            # distance to the face plane
-            r_f = np.abs(np.dot(q - edge_origins[0], n))
-            denom = np.power(r_f, p)
+            denom = np.power(r_f_abs, p)
             I_f = np.empty_like(B)
             np.divide(B, denom, out=I_f, where=denom > eps)
             I_f = np.where(denom <= eps, singular_value, I_f)
+            if localized:
+                I_f *= h_epsilon(r_f_abs, epsilon)
             face_sum += I_f
 
     # edges are indexed, no dict ordering concerns
@@ -200,6 +200,8 @@ def smoothed_offset_potential(
             r_e = r_e_face_edge[f_idx, local_edge]
             denom = np.power(r_e, p)
             I_e = np.where(r_e <= eps, singular_value, B_edge / denom)
+            if localized:
+                I_e *= h_epsilon(r_e, epsilon)
             edge_sum += I_e
 
     if include_vertices:
@@ -259,6 +261,8 @@ def smoothed_offset_potential(
 
             denom = np.power(r_v, p)
             I_v = np.where(denom <= eps, singular_value, B_vertex / denom)
+            if localized:
+                I_v *= h_epsilon(r_v, epsilon)
             vertex_sum += I_v
 
-    return PotentialComponents(face=face_sum, edge=edge_sum, vertex=vertex_sum)
+    return face_sum + edge_sum + vertex_sum

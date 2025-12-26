@@ -20,8 +20,7 @@ def _sample_triangle():
     mesh = MeshData(V=V, faces=faces)
     geom = precompute_face_geometry(mesh)
     q = sample_volume_grid(V.min(axis=0) - 0.5, V.max(axis=0) + 0.5, resolution=50)
-    comps = smoothed_offset_potential(q, mesh, geom)
-    return comps.face + comps.edge + comps.vertex
+    return smoothed_offset_potential(q, mesh, geom)
 
 
 def _sample_tetrahedron_missing_face():
@@ -37,8 +36,7 @@ def _sample_tetrahedron_missing_face():
     mesh = MeshData(V=V, faces=faces)
     geom = precompute_face_geometry(mesh)
     q = sample_volume_grid(V.min(axis=0) - 0.5, V.max(axis=0) + 0.5, resolution=50)
-    comps = smoothed_offset_potential(q, mesh, geom)
-    return comps.face + comps.edge + comps.vertex
+    return smoothed_offset_potential(q, mesh, geom)
 
 
 def test_potential_regression_triangle():
