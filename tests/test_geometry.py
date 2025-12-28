@@ -75,9 +75,9 @@ def test_build_connectivity_tetrahedron_missing_face():
     assert edge_counts.count(2) == 3
 
 
-def test_precompute_face_geometry_single_triangle():
+def test_precompute_mesh_geometry_single_triangle():
     mesh = _mesh_single_triangle()
-    geom = geometry.precompute_face_geometry(mesh)
+    geom = geometry.precompute_mesh_geometry(mesh)
     assert geom.normals.shape == (1, 3)
     assert geom.edge_dirs.shape == (1, 3, 3)
     assert geom.edge_inward.shape == (1, 3, 3)

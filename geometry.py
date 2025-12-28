@@ -40,17 +40,19 @@ class MeshData:
 
 
 @dataclass(frozen=True)
-class FaceGeometry:
-    """Per-face geometry for fast evaluation.
+class MeshGeometry:
+    """Per-face and per-edge geometry for fast evaluation.
 
     normals: (M, 3) unit normals.
     edge_dirs: (M, 3, 3) edge direction unit vectors for edges (v0->v1, v1->v2, v2->v0).
     edge_inward: (M, 3, 3) inward edge normals (n x d_e).
+    edge_normals: (E, 3) average normals per edge (sum of incident face normals, normalized).
     """
 
     normals: ArrayF
     edge_dirs: ArrayF
     edge_inward: ArrayF
+    edge_normals: ArrayF
 
 
 def load_obj_mesh(path: str) -> MeshData:
@@ -113,8 +115,8 @@ def build_connectivity(mesh: MeshData) -> tuple[
     return edges, vertices_to_faces, edges_to_faces, vertices_to_edges
 
 
-def precompute_face_geometry(mesh: MeshData) -> FaceGeometry:
-    """Precompute per-face geometry used by potentials."""
+def precompute_mesh_geometry(mesh: MeshData) -> MeshGeometry:
+    """Precompute mesh geometry used by potentials."""
 
     V = mesh.V
     faces = mesh.faces
@@ -150,4 +152,19 @@ def precompute_face_geometry(mesh: MeshData) -> FaceGeometry:
             edge_dirs[f, i] = d_e
             edge_inward[f, i] = np.cross(n, d_e)
 
-    return FaceGeometry(normals=normals, edge_dirs=edge_dirs, edge_inward=edge_inward)
+    edge_normals = np.zeros((len(mesh.edges), 3), dtype=float)
+    for eidx, face_list in enumerate(mesh.edges_to_faces):
+        n_sum = np.zeros(3, dtype=float)
+        for f in face_list:
+            n_sum += normals[f]
+        n_norm = np.linalg.norm(n_sum)
+        if n_norm > 1e-12:
+            n_sum = n_sum / n_norm
+        edge_normals[eidx] = n_sum
+
+    return MeshGeometry(
+        normals=normals,
+        edge_dirs=edge_dirs,
+        edge_inward=edge_inward,
+        edge_normals=edge_normals,
+    )

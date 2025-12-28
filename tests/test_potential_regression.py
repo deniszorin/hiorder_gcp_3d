@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from geometry import MeshData, precompute_face_geometry
+from geometry import MeshData, precompute_mesh_geometry
 from potential import smoothed_offset_potential
 from viz import sample_volume_grid
 
@@ -18,7 +18,7 @@ def _sample_triangle():
     V = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
     faces = np.array([[0, 1, 2]], dtype=int)
     mesh = MeshData(V=V, faces=faces)
-    geom = precompute_face_geometry(mesh)
+    geom = precompute_mesh_geometry(mesh)
     q = sample_volume_grid(V.min(axis=0) - 0.5, V.max(axis=0) + 0.5, resolution=50)
     return smoothed_offset_potential(q, mesh, geom)
 
@@ -34,7 +34,7 @@ def _sample_tetrahedron_missing_face():
     )
     faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 1]], dtype=int)
     mesh = MeshData(V=V, faces=faces)
-    geom = precompute_face_geometry(mesh)
+    geom = precompute_mesh_geometry(mesh)
     q = sample_volume_grid(V.min(axis=0) - 0.5, V.max(axis=0) + 0.5, resolution=50)
     return smoothed_offset_potential(q, mesh, geom)
 

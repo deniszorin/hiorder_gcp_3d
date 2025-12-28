@@ -190,9 +190,9 @@ def isosurface_with_clip(
     except ImportError as exc:  # pragma: no cover - visualization dependency
         raise ImportError("pyvista is required for visualization.") from exc
 
-    from geometry import precompute_face_geometry
+    from geometry import precompute_mesh_geometry
 
-    geom = precompute_face_geometry(mesh)
+    geom = precompute_mesh_geometry(mesh)
 
     bounds_min = mesh.V.min(axis=0) - 0.5
     bounds_max = mesh.V.max(axis=0) + 0.5
@@ -295,7 +295,7 @@ def build_validation_scenes() -> List[MeshData]:
 def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
     """Generate all described visualizations for validation."""
 
-    from geometry import precompute_face_geometry
+    from geometry import precompute_mesh_geometry
 
     scenes = build_validation_scenes()
     level_values = [10.0, 100.0, 200.0, 500.0, 1000.0]
@@ -303,7 +303,7 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
     levels_3d = np.log10(level_values)
 
     for idx, mesh in enumerate(scenes):
-        geom = precompute_face_geometry(mesh)
+        geom = precompute_mesh_geometry(mesh)
 
         p = mesh.V[0]
         edge_dir = mesh.V[1] - mesh.V[0]

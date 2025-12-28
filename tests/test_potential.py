@@ -27,7 +27,7 @@ def test_H_piecewise():
 
 def test_smoothed_offset_potential_runs():
     mesh = _mesh_single_triangle()
-    geom = geometry.precompute_face_geometry(mesh)
+    geom = geometry.precompute_mesh_geometry(mesh)
 
     q = np.array([[0.2, 0.2, 0.5], [0.3, 0.1, -0.2]])
     values = potential.smoothed_offset_potential(q, mesh, geom)
