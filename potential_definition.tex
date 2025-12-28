@@ -90,4 +90,101 @@ The total potential is computed as the sum over faces, edges, and vertices:
 I_\alpha(q) = \sum_{v \in V} I^v(q) +  \sum_{e \in E} I^e(q)  +  \sum_{f \in F} I^f(q) 
 \]
 
+
+
+\paragraph{Sidedness checks.} This is similar to the $\Phi^e$ terms in GCP, however, we do not need to smooth these checks out or differentiate them, as these just pick one disjoint component of the potential support for each element (face, edge, or vertex). 
+
+In more detail, for a closed surface, the support of vertex,edge and face terms of the potential consist of two  disjoint parts. To avoid spurious forces, e.g., the case of thin surface layers, we need to eliminate the internal one. 
+Note the following importnt subtlety: these are \emph{not} parts globally inside and and outside the surface 
+(for self-interaction we do need the potential of one part to affect other parts, i.e., they cannot vanish exactly a the surface). 
+Rather, this is a local property, determined by the neigborhood of a 
+point.  In the case of PL surfaces, we define these local sidedeness checks as follows. 
+\begin{itemize}
+\item For \emph{faces}, let $p_0$ be a  vertex of a face $f$, and assume that  $n$ is the outward normal.  
+Then the condition for the point $q$  to be on the visible side of face $f$ is  
+\[
+Out^f(q) = (q - p_0) \cdot n > 0
+\]
+if this is not satisfied, the face potential is set to zero.
+\item For \emph{edges}, we consider two half-planes determined by the faces incident at the edge.  The shared boundary line of the half-planes is the line of the edge, and the half-planes contain the faces $f_0$ and $f_1$. The union of these halfplanes $C$ splits the space into two parts. Then we say that the point $q$ is \emph{locally outside} with respect to the edge $e$ if it is in the same part as the outward normals of the faces are pointing to.  Computationally this can be determined using the following approach.  Let $q^p$ be the closest point on $C$
+to $q$.  It is either a projection to one of the planes of the faces, or the projection to the edge.  We only need to consider projections to the faces if these fall inside the halfplanes. To determine if the point $q$ is outside we look at the sign of the dot product associated with the corresponding halfplane or edge:  $n_0$, $n_1$, or $n_a$, where
+$n^a$ be the average of the normals $n_0$ and $n_1$, which we associate with the edge.  
+
+More specifically, for the edge we use the following check. 
+
+Let $\Phi^{e,f_i}(q)$ $i=0,1$ be defined 
+as above, for two incident faces $f_0$ and $f_1$ of an edge $e$, 
+and let $r_{f_0}(q)$ and $r_{f_1}$ be the signed distances to 
+the planes of the two faces. 
+(If there is only one incident face, then all points are considered to be outside $e$.)  Let $r_e$ be the distance to the line of the edge.  
+Define the set of candidate distances as
+\[
+R(q) = \{|r_{f_i}|\, \left| \Phi^{e,f_i} > 0 \right. \} \cup \{ r_e \}
+\]
+$R$ contains from one ($r_e$) to 3 distances, depending on whether the projection of $q$ to face planes is inside or outside each halfplane. 
+
+Set $r = \min R$, is the distance to $C$. Let $a$ be one of $e$, $f_0$ and $f_1$, the element for which $r = r_a$. 
+Then the condition for $q$ to be outside is 
+\[
+\mathrm{Out}^e(q) = 
+\begin{cases}
+r_{f^*} > 0,\; \mbox{if $a = f^*$},\\
+(q - P_e(q))\cdot n_e > 0,\; \mbox{if $a = e$.}
+\end{cases}
+\]
+\item For \emph{vertices} The condition is a bit more complicated, 
+as described in the GCP paper. The approach is similar to the approach for edges.  For vertices locally, the surface is defined by planar sectors, each bounded by two rays along edges meeting at the vertex, forming a cone $C$. 
+We proceed similarly:  we determine which element 
+(a sector interior, a ray, or the vertex itself) contains the closest point $q_p$ to $C$, and check if the direction $q - q_p$ points to the same side as the associated outward normal. 
+
+Let $p_v$ be the vertex position, and $p_0 \ldots p_{k-1}$ be positions of the adjacent vertices. 
+Let $f_0, \ldots f_{k-1}$ be faces incident at vertex $v$, and $e_0,\ldots e_{k-1}$ be edges $(p_v,p_i)$, so that $e_i$ is shared between 
+$f_{i-1}$ and $f_i$, with $f_{-1}$ defined to be $f_{k-1}$. 
+Let $l_i$ be the rays corresponding to these edges, and 
+$w_i = (p_v-p_i)_+$ be vectors along the edges. 
+Recall that $\Phi^{v,e}(q) = w_i \cdot (q - p_v)$, 
+and $\Phi^{e_i,f_i}$ and $\Phi^{e_{i+1},f_i}$ are dot products of the direction towards the interior of the face $f_i$ with $q - P_{e_i}$. 
+
+Define 
+\[
+R_f(q) = \{|r_{f_i}| \left| \Phi^{e_i, f_i}(q) > 0\,\mbox{and}\, \Phi^{e_{i+1},f_i}(q) > 0 \right. \}
+\]
+where $e_{k} = e_{0}$, and let $r_{f^*} = \min R_f$,  if $R_f$ is not empty,  and let $f^*$ be the face for which  the minimum is achieved. 
+or  set $r_{f^*} = \infty$ otherwise.   
+
+Define 
+\[
+R_e(q) = \{|r_{e_i}| \left| \Phi^{v, e_i}(q) > 0 \right.\}
+\]
+i.e., the set of all edge rays for which $q$ projects inside.
+If $R_e$ is not empty, then $r_{e^*} = \min R_e$, and 
+$e^*$ is the edge for which the minimum is achieved. Otherwise 
+set $r_{e^*}= \infty$. 
+Let $r = \min (r_{f^*}, r_{e^*}, r_v)$, and $a(q) = f^*$, $e^*$, or $v$,
+depending on which element has the minimal distance value.
+For each  edge $e_i$, define $n_{e_i}$ as the average of outward normals  $n_{i-1}$ and $n_i$, of incident faces $f_{i-1}$ and $f_i$. 
+
+If the closest point is on an edge ray, or on a face sector:
+The condition to check is,  in this case,
+
+\[
+\mbox{Out}^{v,fe}(q)=
+\begin{cases}
+r_{f^*} > 0,\; \mbox{if $a(q) = f^*$,}\\
+(q - P_{e^*}(q))\cdot n^{e^*} > 0,\; \mbox{if $a(q) = e^*$.}
+\end{cases}
+\]
+If the closest point is at the vertex $v$, we consider the point $q' = 2p_v - q$,  reflected with respect to $p_v$.  As explained in the 
+GCP paper, if $q$ is outside, then $q'$ has to be on the opposite side, 
+and moreover, its closest point on $C$ cannot be $p_v$. 
+Then the complete condition is:
+
+\[
+\mbox{Out}^{v}(q)=
+\begin{cases}
+\mbox{Out}^{v,fe}(q),\;\mbox{if $a(q) = f^*$ or $a(q) = e^*$,}\\
+\bar{\mbox{Out}}^{v,fe}(q'),\mbox{if $a(q) = v$.}
+\end{cases}
+\]
+\end{itemize}
 \end{document}
