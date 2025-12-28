@@ -164,27 +164,23 @@ Let $r = \min (r_{f^*}, r_{e^*}, r_v)$, and $a(q) = f^*$, $e^*$, or $v$,
 depending on which element has the minimal distance value.
 For each  edge $e_i$, define $n_{e_i}$ as the average of outward normals  $n_{i-1}$ and $n_i$, of incident faces $f_{i-1}$ and $f_i$. 
 
-If the closest point is on an edge ray, or on a face sector:
-The condition to check is,  in this case,
 
-\[
-\mbox{Out}^{v,fe}(q)=
-\begin{cases}
-r_{f^*} > 0,\; \mbox{if $a(q) = f^*$,}\\
-(q - P_{e^*}(q))\cdot n^{e^*} > 0,\; \mbox{if $a(q) = e^*$.}
-\end{cases}
-\]
-If the closest point is at the vertex $v$, we consider the point $q' = 2p_v - q$,  reflected with respect to $p_v$.  As explained in the 
-GCP paper, if $q$ is outside, then $q'$ has to be on the opposite side, 
-and moreover, its closest point on $C$ cannot be $p_v$. 
-Then the complete condition is:
+If the closest point is at the vertex $v$, one can show that the $C$
+and $q$ are on different sides of the plane $P$ with normal $q-p_v$ and passing through $p_v$.  Suppose an edge $e_j$ for some $j(q)$ is not perpendicular to $q-p_v$, then we can check if $p_j$ is on the opposite side of the plane $P$.  Otherwise, all faces incident at $v$
+are in the plane $P$, and we can check whether $q$ is on the same side as any normal is pointing to.
 
 \[
 \mbox{Out}^{v}(q)=
 \begin{cases}
-\mbox{Out}^{v,fe}(q),\;\mbox{if $a(q) = f^*$ or $a(q) = e^*$,}\\
-\bar{\mbox{Out}}^{v,fe}(q'),\mbox{if $a(q) = v$.}
+r_{f^*} > 0,\; \mbox{if $a(q) = f^*$,}\\
+(q - P_{e^*}(q))\cdot n^{e^*} > 0,\; \mbox{if $a(q) = e^*$.}\\
+(q - p_v) \cdot (p_{j(q)} - p_v) < 0,\; \mbox{if $a(q) = v$ and 
+there is a $j(q)$, s.t., $(q - p_v) \cdot (p_{j(q)} - p_v) \neq 0$ }\\
+(q - p_v) \cdot n_0 > 0, \mbox{if $a(q) = v$, and for all $j$
+$ (q - p_v)  \cdot (p_{j(q)} - p_v) =0$  }
 \end{cases}
 \]
+
+
 \end{itemize}
 \end{document}

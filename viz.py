@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Optional, Sequence
 import os
 
@@ -12,6 +13,13 @@ from potential import smoothed_offset_potential
 
 
 ArrayF = np.ndarray
+
+
+@dataclass(frozen=True)
+class ValidationScene:
+    name: str
+    mesh: MeshData
+    one_sided: bool = False
 
 
 def sample_plane_grid(
@@ -250,14 +258,140 @@ def isosurface_with_clip(
     return p
 
 
-def build_validation_scenes() -> List[MeshData]:
+def _edge_dir_in_face(face: ArrayF, a: int, b: int) -> int:
+    v0, v1, v2 = face.tolist()
+    edges = [(v0, v1), (v1, v2), (v2, v0)]
+    if (a, b) in edges:
+        return 1
+    if (b, a) in edges:
+        return -1
+    return 0
+
+
+def _orient_faces_consistent(faces: ArrayF) -> ArrayF:
+    faces = faces.copy()
+    edge_to_faces: dict[tuple[int, int], list[int]] = {}
+    for f_idx, (a, b, c) in enumerate(faces):
+        for u, v in ((a, b), (b, c), (c, a)):
+            key = (u, v) if u < v else (v, u)
+            edge_to_faces.setdefault(key, []).append(f_idx)
+
+    if faces.shape[0] == 0:
+        return faces
+
+    visited = np.zeros(faces.shape[0], dtype=bool)
+    stack = [0]
+    visited[0] = True
+    while stack:
+        f_idx = stack.pop()
+        a, b, c = faces[f_idx]
+        for u, v in ((a, b), (b, c), (c, a)):
+            key = (u, v) if u < v else (v, u)
+            for nbr in edge_to_faces.get(key, []):
+                if nbr == f_idx or visited[nbr]:
+                    continue
+                dir_curr = _edge_dir_in_face(faces[f_idx], u, v)
+                dir_nbr = _edge_dir_in_face(faces[nbr], u, v)
+                if dir_curr == dir_nbr:
+                    f0, f1, f2 = faces[nbr]
+                    faces[nbr] = [f0, f2, f1]
+                visited[nbr] = True
+                stack.append(nbr)
+    return faces
+
+
+def _orient_faces_outward_global(V: ArrayF, faces: ArrayF) -> ArrayF:
+    if faces.shape[0] == 0:
+        return faces
+    center = V.mean(axis=0)
+    signs = []
+    for a, b, c in faces:
+        p0, p1, p2 = V[a], V[b], V[c]
+        n = np.cross(p1 - p0, p2 - p0)
+        centroid = (p0 + p1 + p2) / 3.0
+        signs.append(np.dot(n, centroid - center))
+    if np.mean(signs) < 0.0:
+        faces = faces.copy()
+        faces[:, [1, 2]] = faces[:, [2, 1]]
+    return faces
+
+
+def _angle_from_lengths(b: float, c: float, a: float) -> float:
+    denom = 2.0 * b * c
+    if denom <= 1e-12:
+        return 0.0
+    cos_val = (b * b + c * c - a * a) / denom
+    return float(np.arccos(np.clip(cos_val, -1.0, 1.0)))
+
+
+def _vertex_angle_from_origin(p_prev: ArrayF, p: ArrayF, p_next: ArrayF) -> float:
+    b = float(np.linalg.norm(p))
+    c_prev = float(np.linalg.norm(p_prev - p))
+    a_prev = float(np.linalg.norm(p_prev))
+    angle_prev = _angle_from_lengths(b, c_prev, a_prev)
+
+    c_next = float(np.linalg.norm(p_next - p))
+    a_next = float(np.linalg.norm(p_next))
+    angle_next = _angle_from_lengths(b, c_next, a_next)
+    return angle_prev + angle_next
+
+
+def _reflex_delta(target_angle: float, r_reflex: float, radius: float) -> float:
+    lo, hi = 1e-3, np.pi - 1e-3
+
+    def angle_for_delta(delta: float) -> float:
+        p = np.array([r_reflex, 0.0])
+        p_prev = np.array([radius * np.cos(-delta), radius * np.sin(-delta)])
+        p_next = np.array([radius * np.cos(delta), radius * np.sin(delta)])
+        return _vertex_angle_from_origin(p_prev, p, p_next)
+
+    angle_lo = angle_for_delta(lo)
+    angle_hi = angle_for_delta(hi)
+    if not (min(angle_lo, angle_hi) <= target_angle <= max(angle_lo, angle_hi)):
+        raise ValueError("Requested reflex angle is outside the search range.")
+
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        angle_mid = angle_for_delta(mid)
+        if (angle_mid < target_angle) == (angle_lo < target_angle):
+            lo = mid
+            angle_lo = angle_mid
+        else:
+            hi = mid
+            angle_hi = angle_mid
+    return 0.5 * (lo + hi)
+
+
+def _nonconvex_polygon(k: int, reflex_angle: float, radius: float) -> ArrayF:
+    if k < 4:
+        raise ValueError("Need k>=4 for a nonconvex polygon.")
+    r_reflex = 0.1 * radius
+    delta = _reflex_delta(reflex_angle, r_reflex, radius)
+    remaining = 2.0 * np.pi - 2.0 * delta
+    step = remaining / (k - 2)
+    angles = [0.0]
+    angles.extend(delta + i * step for i in range(k - 1))
+    radii = np.full(k, radius)
+    radii[0] = r_reflex
+    xs = radii * np.cos(angles)
+    ys = radii * np.sin(angles)
+    zs = np.zeros_like(xs)
+    points = np.stack([xs, ys, zs], axis=1)
+    angle = _vertex_angle_from_origin(points[-1], points[0], points[1])
+    if abs(angle - reflex_angle) > 1e-3:
+        raise ValueError("Nonconvex angle does not match requested reflex angle.")
+    return points
+
+
+def build_validation_scene_specs() -> List[ValidationScene]:
     """Construct meshes for validation scenarios."""
 
-    scenes: List[MeshData] = []
+    scenes: List[ValidationScene] = []
 
     V = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
     faces = np.array([[0, 1, 2]], dtype=int)
-    scenes.append(MeshData(V=V, faces=faces))
+    faces = _orient_faces_consistent(faces)
+    scenes.append(ValidationScene(name="triangle", mesh=MeshData(V=V, faces=faces)))
 
     V = np.array(
         [
@@ -268,7 +402,8 @@ def build_validation_scenes() -> List[MeshData]:
         ]
     )
     faces = np.array([[0, 1, 2], [1, 0, 3]], dtype=int)
-    scenes.append(MeshData(V=V, faces=faces))
+    faces = _orient_faces_consistent(faces)
+    scenes.append(ValidationScene(name="two_faces", mesh=MeshData(V=V, faces=faces)))
 
     center = np.array([0.0, 0.0, 0.0])
     angles = np.linspace(0.0, 2.0 * np.pi, 4, endpoint=False)
@@ -282,14 +417,106 @@ def build_validation_scenes() -> List[MeshData]:
     )
     V = np.vstack([center, ring])
     faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=int)
-    scenes.append(MeshData(V=V, faces=faces))
+    faces = _orient_faces_consistent(faces)
+    scenes.append(ValidationScene(name="ring_up", mesh=MeshData(V=V, faces=faces)))
 
     ring = np.stack([np.cos(angles), np.sin(angles), -np.ones(4)], axis=1)
     V = np.vstack([center, ring])
     faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=int)
-    scenes.append(MeshData(V=V, faces=faces))
+    faces = _orient_faces_consistent(faces)
+    scenes.append(ValidationScene(name="ring_down", mesh=MeshData(V=V, faces=faces)))
+
+    V = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    faces = np.array(
+        [
+            [0, 2, 1],
+            [0, 1, 3],
+            [0, 3, 2],
+            [1, 2, 3],
+        ],
+        dtype=int,
+    )
+    faces = _orient_faces_consistent(faces)
+    faces = _orient_faces_outward_global(V, faces)
+    scenes.append(
+        ValidationScene(name="tetrahedron", mesh=MeshData(V=V, faces=faces), one_sided=False)
+    )
+
+    corners = np.array(
+        [
+            [-1.0, -1.0, -1.0],
+            [1.0, -1.0, -1.0],
+            [1.0, 1.0, -1.0],
+            [-1.0, 1.0, -1.0],
+            [-1.0, -1.0, 1.0],
+            [1.0, -1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [-1.0, 1.0, 1.0],
+        ]
+    )
+    corners = corners + np.array([0.02, -0.015, 0.01])
+    face_quads = [
+        [0, 1, 2, 3],
+        [4, 5, 6, 7],
+        [0, 1, 5, 4],
+        [1, 2, 6, 5],
+        [2, 3, 7, 6],
+        [3, 0, 4, 7],
+    ]
+    centers = []
+    for quad in face_quads:
+        centers.append(corners[quad].mean(axis=0))
+    centers[1] = np.array([0.0, 0.0, 0.0])
+    V = np.vstack([corners, np.array(centers)])
+    faces = []
+    for f_idx, quad in enumerate(face_quads):
+        c_idx = 8 + f_idx
+        v0, v1, v2, v3 = quad
+        faces.extend(
+            [
+                [c_idx, v0, v1],
+                [c_idx, v1, v2],
+                [c_idx, v2, v3],
+                [c_idx, v3, v0],
+            ]
+        )
+    faces = np.array(faces, dtype=int)
+    faces = _orient_faces_consistent(faces)
+    scenes.append(
+        ValidationScene(name="cube_face_centers", mesh=MeshData(V=V, faces=faces), one_sided=True)
+    )
+
+    base = _nonconvex_polygon(k=6, reflex_angle=5.0 * np.pi / 3.0, radius=1.0)
+    apex_top = np.array([0.0, 0.0, 1.0])
+    apex_bottom = np.array([0.0, 0.0, 0.7])
+    V = np.vstack([apex_top, apex_bottom, base])
+    faces = []
+    base_offset = 2
+    for i in range(base.shape[0]):
+        j = (i + 1) % base.shape[0]
+        faces.append([0, base_offset + i, base_offset + j])
+        faces.append([1, base_offset + j, base_offset + i])
+    faces = np.array(faces, dtype=int)
+    faces = _orient_faces_consistent(faces)
+    faces = _orient_faces_outward_global(V, faces)
+    scenes.append(
+        ValidationScene(name="double_cone_nonconvex", mesh=MeshData(V=V, faces=faces), one_sided=True)
+    )
 
     return scenes
+
+
+def build_validation_scenes() -> List[MeshData]:
+    """Construct meshes for validation scenarios."""
+
+    return [scene.mesh for scene in build_validation_scene_specs()]
 
 
 def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
@@ -297,26 +524,24 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
 
     from geometry import precompute_mesh_geometry
 
-    scenes = build_validation_scenes()
+    scenes = build_validation_scene_specs()
     level_values = [10.0, 100.0, 200.0, 500.0, 1000.0]
     levels_2d = np.log10(level_values)
     levels_3d = np.log10(level_values)
 
-    for idx, mesh in enumerate(scenes):
+    for idx, scene in enumerate(scenes):
+        mesh = scene.mesh
         geom = precompute_mesh_geometry(mesh)
 
-        p = mesh.V[0]
-        edge_dir = mesh.V[1] - mesh.V[0]
-        edge_norm = np.linalg.norm(edge_dir)
-        if edge_norm == 0.0:
-            n = np.array([1.0, 0.0, 0.0])
-        else:
-            n = edge_dir / edge_norm
-        q_plane = sample_plane_grid(p, n, extent=1.5, resolution=100)
-        values = smoothed_offset_potential(q_plane, mesh, geom)
+        center = mesh.V.mean(axis=0)
+        n = geom.normals[0]
+        q_plane = sample_plane_grid(center, n, extent=1.5, resolution=100)
+        values = smoothed_offset_potential(
+            q_plane, mesh, geom, one_sided=scene.one_sided
+        )
         output_path = None
         if output_dir is not None:
-            output_path = f"{output_dir}/scene_{idx}_isolines.png"
+            output_path = f"{output_dir}/scene_{idx}_{scene.name}_isolines.png"
         log_values = np.log10(np.maximum(values, 1e-12))
         visualize_isolines_on_plane(
             q_plane,
@@ -329,10 +554,12 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
         bounds_min = mesh.V.min(axis=0) - 2.0
         bounds_max = mesh.V.max(axis=0) + 2.0
         q_vol = sample_volume_grid(bounds_min, bounds_max, resolution=100)
-        values = smoothed_offset_potential(q_vol, mesh, geom)
+        values = smoothed_offset_potential(
+            q_vol, mesh, geom, one_sided=scene.one_sided
+        )
         output_path = None
         if output_dir is not None:
-            output_path = f"{output_dir}/scene_{idx}_isosurface.html"
+            output_path = f"{output_dir}/scene_{idx}_{scene.name}_isosurface.html"
         center = 0.5 * (bounds_min + bounds_max)
         clip_normal = geom.normals[0]
         visualize_isosurface(
