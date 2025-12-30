@@ -362,13 +362,14 @@ def outside_vertex(
         diff = q[idx] - P_e
         out[idx] = np.einsum("ij,ij->i", diff, n_e) > 0
         closest[idx] = P_e
-
+    
     if np.any(use_vertex):
         idx = np.nonzero(use_vertex)[0]
         p_v = mesh.V[v_idx]
         q_v = q[idx] - p_v
         out_v = np.zeros(idx.shape[0], dtype=bool)
         assigned = np.zeros(idx.shape[0], dtype=bool)
+
         for edge_idx in mesh.vertices_to_edges[v_idx]:
             a, b = mesh.edges[edge_idx]
             # the other endpoint of the edge
@@ -384,7 +385,7 @@ def outside_vertex(
             assigned |= mask
             if np.all(assigned):
                 break
-        # if any points left unassigned after a pass over all edgges
+        # if any points left unassigned after a pass over all edges
         # all their neighnors are in the plane perp to q - p_v
         if np.any(~assigned):
             face_list = mesh.vertices_to_faces[v_idx]
@@ -434,7 +435,22 @@ def smoothed_offset_potential(
     face_sum = np.zeros(nq, dtype=float)
     edge_sum = np.zeros(nq, dtype=float)
     vertex_sum = np.zeros(nq, dtype=float)
+
+    outside_faces = None
+    outside_edges = None
+    outside_vertices = None
+    if one_sided:
+        outside_faces = np.zeros((nf, nq), dtype=bool)
+        for f in range(nf):
+            outside_faces[f], _ = outside_face(f, terms)
+        outside_edges = np.zeros((len(mesh.edges), nq), dtype=bool)
+        for edge_idx in range(len(mesh.edges)):
+            outside_edges[edge_idx], _ = outside_edge(edge_idx, q, mesh, geom, terms)
+        outside_vertices = np.zeros((V.shape[0], nq), dtype=bool)
+        for v in range(V.shape[0]):
+            outside_vertices[v], _ = outside_vertex(v, q, mesh, geom, terms)
     
+    #     
     if not (include_faces or include_edges or include_vertices):
         return face_sum
 
@@ -451,6 +467,8 @@ def smoothed_offset_potential(
             I_f = np.empty_like(B)
             np.divide(B, denom, out=I_f, where=denom > eps)
             I_f = np.where(denom <= eps, singular_value, I_f)
+            if one_sided:
+                I_f = np.where(outside_faces[f], I_f, 0.0)
             if localized:
                 I_f *= h_epsilon(r_f_abs_f, epsilon)
             face_sum += I_f
@@ -473,13 +491,21 @@ def smoothed_offset_potential(
             f1 = face_list[1]
             e1 = get_local_index(edge_idx, f1, mesh)
             h_face_1 = H_alpha(phi_ef[f1, e1], alpha)
+        if one_sided:
+            h_face_0 = h_face_0 * outside_faces[f0]
+            if len(face_list) > 1:
+                h_face_1 = h_face_1 * outside_faces[f1]
 
         B_edge = (1.0 - h_face_0 - h_face_1) * H_alpha(phi0, alpha) * H_alpha(phi1, alpha)
 
         if include_edges:
             # distance to edge r_e already computed per edge
             denom = np.power(r_e[edge_idx], p)
-            I_e = np.where(r_e[edge_idx]<= eps, singular_value, B_edge / denom)
+            I_e = np.empty_like(B_edge)
+            np.divide(B_edge, denom, out=I_e, where=denom > eps)
+            I_e = np.where(denom <= eps, singular_value, I_e)
+            if one_sided:
+                I_e = np.where(outside_edges[edge_idx], I_e, 0.0)
             if localized:
                 I_e *= h_epsilon(r_e[edge_idx], epsilon)
             edge_sum += I_e
@@ -505,6 +531,9 @@ def smoothed_offset_potential(
                 # face directional factor affecting the vertex (incident edges only)
                 h0 = H_alpha(phi_ef[f, e0], alpha)
                 h1 = H_alpha(phi_ef[f, e1], alpha)
+                if one_sided:
+                    h0 = h0 * outside_faces[f]
+                    h1 = h1 * outside_faces[f]
                 face_term += h0 * h1
 
             edge_term = np.zeros(nq, dtype=float)
@@ -520,6 +549,8 @@ def smoothed_offset_potential(
                     h_v = H_alpha(phi_ve[edge_idx, 1], alpha)
                 else:
                     raise ValueError("Vertex not found in edge.")
+                if one_sided:
+                    h_v = h_v * outside_edges[edge_idx]
                 # retrive face terms that were used for the edge
 
                 face_list = mesh.edges_to_faces[edge_idx]
@@ -532,6 +563,10 @@ def smoothed_offset_potential(
                     f1 = face_list[1]
                     e1 = get_local_index(edge_idx, f1, mesh)
                     h_face_1 = H_alpha(phi_ef[f1, e1], alpha)
+                if one_sided:
+                    h_face_0 = h_face_0 * outside_faces[f0]
+                    if len(face_list) > 1:
+                        h_face_1 = h_face_1 * outside_faces[f1]
                 # complete part of the edge directional factor to be used for the vertex
                 # it is different from the complete factor as it only uses h_v = H^alpha(Phi^{v,e})
                 # for this vertex, not both
@@ -541,8 +576,9 @@ def smoothed_offset_potential(
 
             denom = np.power(r_v, p)
             I_v = np.where(denom <= eps, singular_value, B_vertex / denom)
+            if one_sided:
+                I_v = np.where(outside_vertices[v], I_v, 0.0)
             if localized:
                 I_v *= h_epsilon(r_v, epsilon)
             vertex_sum += I_v
-
     return face_sum + edge_sum + vertex_sum

@@ -190,6 +190,17 @@ def isosurface_with_clip(
     mesh: MeshData,
     levels: Optional[Sequence[float]] = None,
     res: int = 100,
+    one_sided: bool = False,
+    include_faces: bool = True,
+    include_edges: bool = True,
+    include_vertices: bool = True,
+    alpha: float = 0.1,
+    p: float = 2.0,
+    show_mesh: bool = False,
+    use_widget: bool = True,
+    clip_origin: Optional[ArrayF] = None,
+    clip_normal: Optional[ArrayF] = None,
+    output_path: Optional[str] = None,
 ):
     """Interactive PyVista isosurfaces with a clipping plane widget."""
 
@@ -211,7 +222,17 @@ def isosurface_with_clip(
     xx, yy, zz = np.meshgrid(xs, ys, zs, indexing="ij")
     points = np.stack([xx, yy, zz], axis=-1).reshape(-1, 3)
 
-    values = smoothed_offset_potential(points, mesh, geom)
+    values = smoothed_offset_potential(
+        points,
+        mesh,
+        geom,
+        alpha=alpha,
+        p=p,
+        include_faces=include_faces,
+        include_edges=include_edges,
+        include_vertices=include_vertices,
+        one_sided=one_sided,
+    )
     log_values = np.log10(np.maximum(values, 1e-12))
 
     grid = pv.ImageData()
@@ -230,31 +251,48 @@ def isosurface_with_clip(
     log_levels = np.log10(np.maximum(np.asarray(levels, dtype=float), 1e-12))
     iso = grid.contour(log_levels.tolist(), scalars="log_potential")
 
-    p = pv.Plotter()
-    p.add_mesh(iso, scalars="log_potential", cmap="viridis", opacity=1.0, name="clip")
+    if not use_widget and clip_origin is not None and clip_normal is not None:
+        iso = iso.clip(normal=clip_normal, origin=clip_origin)
 
-    def clip_callback(normal, origin):
-        clipped = iso.clip(normal=normal, origin=origin)
-        p.add_mesh(
-            clipped,
-            scalars="log_potential",
-            cmap="viridis",
-            opacity=1.0,
-            name="clip",
-            reset_camera=False,
+    p = pv.Plotter(off_screen=output_path is not None)
+    p.add_mesh(iso, scalars="log_potential", cmap="viridis", opacity=1.0, name="clip")
+    if show_mesh:
+        faces = np.hstack(
+            [np.full((mesh.faces.shape[0], 1), 3, dtype=np.int64), mesh.faces.astype(np.int64)]
+        ).ravel()
+        tri = pv.PolyData(mesh.V, faces)
+        p.add_mesh(tri, color="white", opacity=0.3, show_edges=True)
+
+    if use_widget:
+        def clip_callback(normal, origin):
+            clipped = iso.clip(normal=normal, origin=origin)
+            p.add_mesh(
+                clipped,
+                scalars="log_potential",
+                cmap="viridis",
+                opacity=1.0,
+                name="clip",
+                reset_camera=False,
+            )
+
+        center = 0.5 * (bounds_min + bounds_max)
+        plane_widget = p.add_plane_widget(
+            callback=clip_callback,
+            origin=center,
+            normal=geom.normals[0],
         )
 
-    center = 0.5 * (bounds_min + bounds_max)
-    plane_widget = p.add_plane_widget(
-        callback=clip_callback,
-        origin=center,
-        normal=geom.normals[0],
-    )
+        def toggle_plane(flag):
+            plane_widget.SetEnabled(flag)
 
-    def toggle_plane(flag):
-        plane_widget.SetEnabled(flag)
+        p.add_checkbox_button_widget(toggle_plane, value=True, position=(10, 10))
 
-    p.add_checkbox_button_widget(toggle_plane, value=True, position=(10, 10))
+    if output_path is not None:
+        if output_path.endswith(".html"):
+            p.export_html(output_path)
+        else:
+            p.show(screenshot=output_path)
+        p.close()
     return p
 
 
@@ -383,7 +421,7 @@ def _nonconvex_polygon(k: int, reflex_angle: float, radius: float) -> ArrayF:
     return points
 
 
-def build_validation_scene_specs() -> List[ValidationScene]:
+def build_validation_scene_specs(reverse_faces: bool = False) -> List[ValidationScene]:
     """Construct meshes for validation scenarios."""
 
     scenes: List[ValidationScene] = []
@@ -391,6 +429,8 @@ def build_validation_scene_specs() -> List[ValidationScene]:
     V = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
     faces = np.array([[0, 1, 2]], dtype=int)
     faces = _orient_faces_consistent(faces)
+    if reverse_faces:
+        faces = faces[:, [0, 2, 1]]
     scenes.append(ValidationScene(name="triangle", mesh=MeshData(V=V, faces=faces)))
 
     V = np.array(
@@ -403,6 +443,8 @@ def build_validation_scene_specs() -> List[ValidationScene]:
     )
     faces = np.array([[0, 1, 2], [1, 0, 3]], dtype=int)
     faces = _orient_faces_consistent(faces)
+    if reverse_faces:
+        faces = faces[:, [0, 2, 1]]
     scenes.append(ValidationScene(name="two_faces", mesh=MeshData(V=V, faces=faces)))
 
     center = np.array([0.0, 0.0, 0.0])
@@ -418,12 +460,16 @@ def build_validation_scene_specs() -> List[ValidationScene]:
     V = np.vstack([center, ring])
     faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=int)
     faces = _orient_faces_consistent(faces)
+    if reverse_faces:
+        faces = faces[:, [0, 2, 1]]
     scenes.append(ValidationScene(name="ring_up", mesh=MeshData(V=V, faces=faces)))
 
     ring = np.stack([np.cos(angles), np.sin(angles), -np.ones(4)], axis=1)
     V = np.vstack([center, ring])
     faces = np.array([[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 1]], dtype=int)
     faces = _orient_faces_consistent(faces)
+    if reverse_faces:
+        faces = faces[:, [0, 2, 1]]
     scenes.append(ValidationScene(name="ring_down", mesh=MeshData(V=V, faces=faces)))
 
     V = np.array(
@@ -436,15 +482,17 @@ def build_validation_scene_specs() -> List[ValidationScene]:
     )
     faces = np.array(
         [
-            [0, 2, 1],
-            [0, 1, 3],
-            [0, 3, 2],
-            [1, 2, 3],
+            [0, 1, 2],
+            [1, 0, 3],
+            [3, 0, 2],
+            [2, 1, 3],
         ],
         dtype=int,
     )
     faces = _orient_faces_consistent(faces)
-    faces = _orient_faces_outward_global(V, faces)
+    if reverse_faces:
+        faces = faces[:, [0, 2, 1]]
+#    faces = _orient_faces_outward_global(V, faces)
     scenes.append(
         ValidationScene(name="tetrahedron", mesh=MeshData(V=V, faces=faces), one_sided=False)
     )
@@ -489,6 +537,8 @@ def build_validation_scene_specs() -> List[ValidationScene]:
         )
     faces = np.array(faces, dtype=int)
     faces = _orient_faces_consistent(faces)
+    if reverse_faces:
+        faces = faces[:, [0, 2, 1]]
     scenes.append(
         ValidationScene(name="cube_face_centers", mesh=MeshData(V=V, faces=faces), one_sided=True)
     )
@@ -505,36 +555,45 @@ def build_validation_scene_specs() -> List[ValidationScene]:
         faces.append([1, base_offset + j, base_offset + i])
     faces = np.array(faces, dtype=int)
     faces = _orient_faces_consistent(faces)
-    faces = _orient_faces_outward_global(V, faces)
+    if reverse_faces:
+        faces = faces[:, [0, 2, 1]]
+#    faces = _orient_faces_outward_global(V, faces)
     scenes.append(
-        ValidationScene(name="double_cone_nonconvex", mesh=MeshData(V=V, faces=faces), one_sided=True)
+        ValidationScene(name="double_cone_nonconvex_out", mesh=MeshData(V=V, faces=faces), one_sided=True)
+    )
+    scenes.append(
+        ValidationScene(name="double_cone_nonconvex_both", mesh=MeshData(V=V, faces=faces), one_sided=False)
     )
 
     return scenes
 
 
-def build_validation_scenes() -> List[MeshData]:
+def build_validation_scenes(reverse_faces=False) -> List[MeshData]:
     """Construct meshes for validation scenarios."""
 
-    return [scene.mesh for scene in build_validation_scene_specs()]
+    return [scene.mesh for scene in build_validation_scene_specs(reverse_faces=reverse_faces)]
 
 
-def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
+def run_validation_visualizations(output_dir: Optional[str] = None,reverse_faces=False) -> None:
     """Generate all described visualizations for validation."""
 
     from geometry import precompute_mesh_geometry
 
-    scenes = build_validation_scene_specs()
+    scenes = build_validation_scene_specs(reverse_faces=reverse_faces)
     level_values = [10.0, 100.0, 200.0, 500.0, 1000.0]
     levels_2d = np.log10(level_values)
-    levels_3d = np.log10(level_values)
 
     for idx, scene in enumerate(scenes):
         mesh = scene.mesh
         geom = precompute_mesh_geometry(mesh)
 
         center = mesh.V.mean(axis=0)
-        n = geom.normals[0]
+        edge_dir = mesh.V[1] - mesh.V[0]
+        edge_norm = np.linalg.norm(edge_dir)
+        if edge_norm == 0.0:
+            n = geom.normals[0]
+        else:
+            n = edge_dir / edge_norm
         q_plane = sample_plane_grid(center, n, extent=1.5, resolution=100)
         values = smoothed_offset_potential(
             q_plane, mesh, geom, one_sided=scene.one_sided
@@ -551,22 +610,24 @@ def run_validation_visualizations(output_dir: Optional[str] = None) -> None:
             output_path=output_path,
         )
 
-        bounds_min = mesh.V.min(axis=0) - 2.0
-        bounds_max = mesh.V.max(axis=0) + 2.0
+        bounds_min = mesh.V.min(axis=0) - 1.0
+        bounds_max = mesh.V.max(axis=0) + 1.0
         q_vol = sample_volume_grid(bounds_min, bounds_max, resolution=100)
-        values = smoothed_offset_potential(
-            q_vol, mesh, geom, one_sided=scene.one_sided
-        )
         output_path = None
         if output_dir is not None:
             output_path = f"{output_dir}/scene_{idx}_{scene.name}_isosurface.html"
         center = 0.5 * (bounds_min + bounds_max)
         clip_normal = geom.normals[0]
-        visualize_isosurface(
-            q_vol,
-            values,
-            resolution=100,
-            levels=levels_3d,
+        isosurface_with_clip(
+            mesh,
+            levels=level_values,
+            res=100,
+            one_sided=scene.one_sided,
+            include_faces=True,
+            include_edges=True,
+            include_vertices=True,
+            show_mesh=False,
+            use_widget=False,
             clip_origin=center,
             clip_normal=clip_normal,
             output_path=output_path,
