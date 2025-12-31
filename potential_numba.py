@@ -297,8 +297,8 @@ def potential_face(
     alpha: float, p: float, epsilon: float,
     localized: bool, one_sided: bool,
 ) -> float:
-    """"
-    """"
+    """
+    """
     v0 = conn.faces[fidx, 0]
     p0 = conn.V[v0]
     n = geom.normals[fidx]
