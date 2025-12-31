@@ -1,0 +1,39 @@
+Convex hull algorithm for a cone based on Melkman's algorithm
+
+Let e[i], i = 0.. n-1, n >= 3, be unit vectors along edges of a polygonal cone, formed by sectors spanned 
+by rays (r[i], r[i+1]) along e[i] with e[n] = e[0], starting at the same point p_v.  
+D[-i] denotes i-th element from the end, D[-1] is last. 
+Let orient(a,b,c) = a dot (b x c)
+
+The following algorithm constructs a sequence of indices i[j], j = 0..m-1, such that the polygonal cone
+with faces spanned by e[i[j]] e[i[j+1]]. 
+
+convex_hull( e)
+
+# Build initial deque from first 3 points
+D = empty deque
+if orient(e[0],e[1],e[2]) > 0:
+    D.push_front(2); D.push_front(0); D.push_back(1); D.push_back(2)
+else:
+    D.push_front(2); D.push_front(1); D.push_back(0); D.push_back(2)
+
+for i = 3..n-1:
+
+    # If pi is inside/on the current hull, skip it
+    if orient(e[D[-2]], e[D[-1]], e[i]) > 0 AND orient(e[i], e[D[0]], e[D[1]]) > 0:
+        continue
+
+    # Fix hull at the back end
+    while orient(e[D[-2]], e[D[-1]], e[i]) <= 0:
+        D.pop_back()
+    D.push_back(i)
+
+    # Fix hull at the front end
+    while orient(e[i], e[D[0]], e[D[1]]) <= 0:
+        D.pop_front()
+    D.push_front(i)
+
+# D has first point duplicated at both ends; remove one
+D.pop_back()
+
+return D  # hull vertices in CCW order
