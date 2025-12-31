@@ -365,32 +365,13 @@ def outside_vertex(
     
     if np.any(use_vertex):
         idx = np.nonzero(use_vertex)[0]
-        p_v = mesh.V[v_idx]
-        q_v = q[idx] - p_v
-        out_v = np.zeros(idx.shape[0], dtype=bool)
-        assigned = np.zeros(idx.shape[0], dtype=bool)
-
-        for edge_idx in mesh.vertices_to_edges[v_idx]:
-            a, b = mesh.edges[edge_idx]
-            # the other endpoint of the edge
-            other = b if a == v_idx else a
-            # vector along the edge
-            edge_vec = mesh.V[other] - p_v
-            dots = q_v @ edge_vec
-            # if not assigned outside/inside and dot product (q-p_v ) dot (p_j -p_v)
-            # is large enough
-            mask = (~assigned) & (np.abs(dots) > eps)
-            out_v[mask] = dots[mask] < 0
-            # mark as assigned 
-            assigned |= mask
-            if np.all(assigned):
-                break
         # if any points left unassigned after a pass over all edges, use
         # the pointed-vertex flag for those vertex-closest queries.
-        if np.any(~assigned):
-            out_v[~assigned] = geom.pointed_vertices[v_idx]
-        out[idx] = out_v
-        closest[idx] = p_v
+        # the reason for this is that if the vertex is closest, this means q 
+        # is in the polar cone and the pointed-vertex flag indicates if this 
+        # cones is inside or outside (the whole cone has to be on one side)
+        out[idx] = geom.pointed_vertices[v_idx]
+        closest[idx] = mesh.V[v_idx]
 
     return out, closest
 

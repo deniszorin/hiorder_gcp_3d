@@ -262,26 +262,11 @@ def outside_vertex_scalar(
         return r_f_min_signed > 0.0
     if use_edge:
         return dot3(q - P_e_min, geom.edge_normals[edge_min]) > 0.0
-
-    q_v = q - conn.V[v_idx]
-    start = conn.vertex_edge_offsets[v_idx]
-    end = conn.vertex_edge_offsets[v_idx + 1]
-    for idx in range(start, end):
-        eidx = conn.vertex_edge_indices[idx]
-        a = conn.edges[eidx, 0]
-        b = conn.edges[eidx, 1]
-        # the other endpoint of the edge
-        other = b if a == v_idx else a
-        # vector along the edge
-        edge_vec = conn.V[other] - conn.V[v_idx]
-        dots = dot3(q_v, edge_vec)
-        # if not assigned outside/inside and dot product (q-p_v ) dot (p_j -p_v)
-        # is large enough
-        if abs(dots) > eps:
-            return dots < 0.0
-
-    # if any points left unassigned after a pass over all edges, use the
-    # pointed-vertex flag for those vertex-closest queries.
+    # if any points left unassigned after a pass over all edges, use
+    # the pointed-vertex flag for those vertex-closest queries.
+    # the reason for this is that if the vertex is closest, this means q 
+    # is in the polar cone and the pointed-vertex flag indicates if this 
+    # cones is inside or outside (the whole cone has to be on one side)
     return geom.pointed_vertices[v_idx]
 
 

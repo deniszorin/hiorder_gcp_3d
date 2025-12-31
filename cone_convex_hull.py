@@ -63,8 +63,7 @@ def cone_convex_hull(
 
     Returns (indices, coplanar, fullspace). coplanar is True when no non-coplanar
     triple is found. fullspace is True when fewer than 3 edges remain in the
-    output. If debug is True, prints raw deque indices and the final index
-    sequence. debug_label prefixes those lines when provided.
+    output.
     """
 
     e = np.asarray(e, dtype=float)

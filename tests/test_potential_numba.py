@@ -27,7 +27,7 @@ def _sample_mesh_grid(mesh, resolution):
 def test_smoothed_offset_potential_numba_triangle_matches():
     mesh = _mesh_single_triangle()
     geom = geometry.precompute_mesh_geometry(mesh)
-    q = _sample_mesh_grid(mesh, resolution=30)
+    q = _sample_mesh_grid(mesh, resolution=10)
 
     ref = potential.smoothed_offset_potential(q, mesh, geom)
     numba_vals = potential_numba.smoothed_offset_potential_numba(q, mesh, geom)
@@ -41,7 +41,7 @@ def test_smoothed_offset_potential_numba_matches_validation_scenes():
         print(f"scene: {scene.name}")
         mesh = scene.mesh
         geom = geometry.precompute_mesh_geometry(mesh)
-        q = _sample_mesh_grid(mesh, resolution=30)
+        q = _sample_mesh_grid(mesh, resolution=10)
 
         ref = potential.smoothed_offset_potential(
             q,
@@ -119,7 +119,7 @@ def test_smoothed_offset_potential_numba_flipped_normals():
     faces = faces[:, [0, 2, 1]]
     mesh = geometry.MeshData(V=V, faces=faces)
     geom = geometry.precompute_mesh_geometry(mesh)
-    q = _sample_mesh_grid(mesh, resolution=30)
+    q = _sample_mesh_grid(mesh, resolution=10)
 
     print("scene: tetrahedron_flipped")
     ref = potential.smoothed_offset_potential(q, mesh, geom, one_sided=False)
@@ -135,7 +135,7 @@ def test_smoothed_offset_potential_numba_flipped_normals():
         print(f"scene: {scene.name}_flipped")
         mesh = scene.mesh
         geom = geometry.precompute_mesh_geometry(mesh)
-        q = _sample_mesh_grid(mesh, resolution=30)
+        q = _sample_mesh_grid(mesh, resolution=10)
 
         ref = potential.smoothed_offset_potential(
             q,

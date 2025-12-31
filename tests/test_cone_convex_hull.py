@@ -71,10 +71,6 @@ def _assert_hull_valid(e: np.ndarray, D: np.ndarray) -> None:
     assert validate_cone_convex_hull(e, D, eps=1e-12)
 
 
-def _debug_hull(e: np.ndarray, label: str) -> tuple[np.ndarray, bool, bool]:
-    return cone_convex_hull(e, debug=True, debug_label=label)
-
-
 def _perturb_vertices(vertices: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     offsets = np.zeros_like(vertices)
     for i in range(vertices.shape[0]):
@@ -185,7 +181,7 @@ def test_convex_polygon_inside_apex():
     vertices = _regular_polygon(6)
     apex = np.array([0.0, 0.0, 1.0])
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_convex_polygon_inside_apex")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert len(D) == 6
@@ -197,7 +193,7 @@ def test_convex_polygon_outside_apex():
     vertices = _regular_polygon(6)
     apex = np.array([2.0, 0.0, 1.0])
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_convex_polygon_outside_apex")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert len(D) == 6
@@ -215,7 +211,7 @@ def test_convex_polygon_with_midpoints():
     vertices = _ensure_ccw_xy(np.array(verts))
     apex = np.array([0.0, 0.0, 1.0])
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_convex_polygon_with_midpoints")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     expected = np.arange(0, vertices.shape[0], 2)
@@ -227,7 +223,7 @@ def test_star_polygon_alternating():
     vertices = _star_polygon(8)
     apex = np.array([0.0, 0.0, 1.0])
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_star_polygon_alternating")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     expected = np.arange(0, 8, 2)
@@ -239,7 +235,7 @@ def test_star_polygon_alternating():
 def test_all_coplanar_returns_input():
     angles = np.linspace(0.0, 2.0 * math.pi, 6, endpoint=False)
     e = np.stack([np.cos(angles), np.sin(angles), np.zeros_like(angles)], axis=1)
-    D, coplanar, fullspace = _debug_hull(e, "test_all_coplanar_returns_input")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert coplanar
     assert not fullspace
     assert np.array_equal(D, np.arange(e.shape[0]))
@@ -269,7 +265,7 @@ def test_spiral_polygon():
     vertices = _ensure_ccw_xy(vertices)
     apex = np.array([0.0, 0.0, 1.0])
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_spiral_polygon")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     expected = np.arange(4 * N - 5, 4 * N)
@@ -285,7 +281,7 @@ def test_convex_lift_two_vertices():
     vertices[0, 2] = apex[2]
     vertices[3, 2] = apex[2]
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_convex_lift_two_vertices")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert len(D) == 4
@@ -300,7 +296,7 @@ def test_convex_lift_two_vertices_perturbed():
     vertices[3, 2] = apex[2]
     vertices = _perturb_vertices(vertices)
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_convex_lift_two_vertices_perturbed")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert D.tolist() == [0, 2, 3, 4, 5]
@@ -313,7 +309,7 @@ def test_nonconvex_lift_two_vertices():
     vertices[0, 2] = apex[2]
     vertices[3, 2] = apex[2]
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_nonconvex_lift_two_vertices")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert len(D) == 4
@@ -328,7 +324,7 @@ def test_nonconvex_lift_two_vertices_perturbed():
     vertices[3, 2] = apex[2]
     vertices = _perturb_vertices(vertices)
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_nonconvex_lift_two_vertices_perturbed")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert D.tolist() == [0, 1, 3, 5]
@@ -341,7 +337,7 @@ def test_convex_lift_three_vertices():
     for idx in (0, 2, 4):
         vertices[idx, 2] = apex[2]
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_convex_lift_three_vertices")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert len(D) == 3
@@ -355,7 +351,7 @@ def test_nonconvex_lift_three_vertices():
     for idx in (0, 2, 4):
         vertices[idx, 2] = apex[2]
     e = _cone_edges(vertices, apex)
-    D, coplanar, fullspace = _debug_hull(e, "test_nonconvex_lift_three_vertices")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert len(D) == 3
@@ -392,7 +388,7 @@ def test_corner_case_exact(
     expected_perturbed_valid: bool,
 ) -> None:
     e = _build_corner_case(m, n)
-    D, coplanar, fullspace = _debug_hull(e, f"test_corner_{name}_exact")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert coplanar is expected_coplanar
     assert not fullspace
     assert np.array_equal(D, np.array(expected, dtype=int))
@@ -415,7 +411,7 @@ def test_corner_case_perturbed(
 ) -> None:
     e = _build_corner_case(m, n)
     e = _perturb_edges(e)
-    D, coplanar, fullspace = _debug_hull(e, f"test_corner_{name}_perturbed")
+    D, coplanar, fullspace = cone_convex_hull(e)
     assert not coplanar
     assert not fullspace
     assert np.array_equal(D, np.array(expected_perturbed, dtype=int))
