@@ -186,6 +186,194 @@ def visualize_isosurface(
     return p
 
 
+def isolines_with_clip(
+    mesh: MeshData,
+    levels: Optional[Sequence[float]] = None,
+    res: int = 100,
+    one_sided: bool = False,
+    include_faces: bool = True,
+    include_edges: bool = True,
+    include_vertices: bool = True,
+    alpha: float = 0.1,
+    p: float = 2.0,
+    use_numba: bool = False,
+    show_mesh: bool = False,
+    use_widget: bool = True,
+    clip_origin: Optional[ArrayF] = None,
+    clip_normal: Optional[ArrayF] = None,
+    output_path: Optional[str] = None,
+):
+    """Interactive isolines on a plane with sliders for normal and offset."""
+
+    try:
+        import pyvista as pv
+    except ImportError as exc:  # pragma: no cover - visualization dependency
+        raise ImportError("pyvista is required for visualization.") from exc
+
+    from geometry import precompute_mesh_geometry
+
+    geom = precompute_mesh_geometry(mesh)
+
+    bounds_min = mesh.V.min(axis=0) - 0.5
+    bounds_max = mesh.V.max(axis=0) + 0.5
+    extent = 0.5 * np.max(bounds_max - bounds_min)
+    center = 0.5 * (bounds_min + bounds_max)
+
+    if clip_origin is None:
+        clip_origin = center
+    clip_origin = np.asarray(clip_origin, dtype=float)
+
+    if clip_normal is None:
+        clip_normal = geom.normals[0]
+    clip_normal = np.asarray(clip_normal, dtype=float)
+    norm = np.linalg.norm(clip_normal)
+    if norm <= 1e-12:
+        clip_normal = np.array([0.0, 0.0, 1.0], dtype=float)
+    else:
+        clip_normal = clip_normal / norm
+
+    if levels is None:
+        levels = [1000.0]
+    levels = np.asarray(levels, dtype=float)
+
+    faces = np.hstack(
+        [np.full((mesh.faces.shape[0], 1), 3, dtype=np.int64), mesh.faces.astype(np.int64)]
+    ).ravel()
+    pv_mesh = pv.PolyData(mesh.V, faces)
+
+    base_origin = clip_origin.copy()
+    base_normal = clip_normal.copy()
+
+    state = {
+        "offset": 0.0,
+        "angle_x": float(np.degrees(np.arccos(np.clip(base_normal[0], -1.0, 1.0)))),
+        "angle_y": float(np.degrees(np.arccos(np.clip(base_normal[1], -1.0, 1.0)))),
+    }
+
+    plotter = pv.Plotter()
+    if show_mesh:
+        plotter.add_mesh(pv_mesh, color="white", opacity=0.2, show_edges=True)
+
+    contour_actor = None
+    plane_actor = None
+
+    def _current_normal() -> np.ndarray:
+        angle_x = np.deg2rad(state["angle_x"])
+        angle_y = np.deg2rad(state["angle_y"])
+
+        nx = np.cos(angle_x)
+        ny = np.cos(angle_y)
+        remaining = 1.0 - nx * nx - ny * ny
+        if remaining <= 0.0:
+            scale = 1.0 / max(np.linalg.norm([nx, ny]), 1e-12)
+            nx *= scale
+            ny *= scale
+            nz = 0.0
+        else:
+            nz = np.sqrt(remaining)
+
+        n_pos = np.array([nx, ny, nz], dtype=float)
+        n_neg = np.array([nx, ny, -nz], dtype=float)
+        if np.dot(n_pos, base_normal) >= np.dot(n_neg, base_normal):
+            return n_pos
+        return n_neg
+
+    def _update_scene() -> None:
+        nonlocal contour_actor, plane_actor
+        normal = _current_normal()
+        origin = base_origin + state["offset"] * normal
+
+        q_plane = sample_plane_grid(origin, normal, extent=extent, resolution=res)
+        values = smoothed_offset_potential(
+            q_plane,
+            mesh,
+            geom,
+            alpha=alpha,
+            p=p,
+            include_faces=include_faces,
+            include_edges=include_edges,
+            include_vertices=include_vertices,
+            one_sided=one_sided,
+            use_numba=use_numba,
+        )
+
+        plane_points = pv.PolyData(q_plane)
+        plane_points.point_data["potential"] = values
+        surface = plane_points.delaunay_2d()
+        isolines = surface.contour(levels.tolist(), scalars="potential")
+
+        if contour_actor is not None:
+            plotter.remove_actor(contour_actor)
+            contour_actor = None
+        if isolines.n_points > 0:
+            contour_actor = plotter.add_mesh(isolines, color="#e34a33", line_width=2)
+
+        plane = pv.Plane(
+            center=origin,
+            direction=normal,
+            i_size=2.0 * extent,
+            j_size=2.0 * extent,
+        )
+        if plane_actor is not None:
+            plotter.remove_actor(plane_actor)
+        plane_actor = plotter.add_mesh(plane, color="#cccccc", opacity=0.15)
+
+        plotter.render()
+
+    _update_scene()
+
+    if use_widget:
+        def _update_offset(value: float) -> None:
+            state["offset"] = value
+            _update_scene()
+
+        def _update_angle_x(value: float) -> None:
+            state["angle_x"] = value
+            _update_scene()
+
+        def _update_angle_y(value: float) -> None:
+            state["angle_y"] = value
+            _update_scene()
+
+        plotter.add_slider_widget(
+            _update_offset,
+            [-float(extent), float(extent)],
+            value=float(state["offset"]),
+            title="Offset Along Normal",
+            pointa=(0.02, 0.1),
+            pointb=(0.35, 0.1),
+        )
+        plotter.add_slider_widget(
+            _update_angle_x,
+            [0.0, 180.0],
+            value=float(state["angle_x"]),
+            title="Normal Angle X",
+            pointa=(0.02, 0.18),
+            pointb=(0.35, 0.18),
+        )
+        plotter.add_slider_widget(
+            _update_angle_y,
+            [0.0, 180.0],
+            value=float(state["angle_y"]),
+            title="Normal Angle Y",
+            pointa=(0.02, 0.26),
+            pointb=(0.35, 0.26),
+        )
+
+    if output_path is not None:
+        html_path = output_path if output_path.endswith(".html") else f"{output_path}.html"
+        try:
+            plotter.export_html(html_path)
+        except ImportError:
+            base, _ = os.path.splitext(html_path)
+            pv_mesh.save(f"{base}.vtp")
+        plotter.close()
+    else:
+        plotter.show()
+
+    return plotter
+
+
 def visualize_pointed_vertices(
     mesh: MeshData,
     point_size: float = 12.0,
