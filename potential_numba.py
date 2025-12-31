@@ -145,7 +145,7 @@ def find_local_edge(conn: NumbaConnectivity, fidx: int, edge_idx: int) -> int:
 
 
 # ****************************************************************************
-#  Potential compoents 
+#  Potential components 
 
 @njit(cache=True)
 def phi_ef(
@@ -269,6 +269,8 @@ def outside_vertex_scalar(
     # cones is inside or outside (the whole cone has to be on one side)
     return geom.pointed_vertices[v_idx]
 
+# ****************************************************************************
+# Potential evaluation, face, edge, vertex components
 
 @njit(cache=True)
 def potential_face(
@@ -278,6 +280,9 @@ def potential_face(
     localized: bool, one_sided: bool,
 ) -> float:
     """
+    Evaluate the potential from face fidx, at point q
+    Parameters are the same as for the top-pevel potential function
+    returns the value of the potential
     """
     v0 = conn.faces[fidx, 0]
     p0 = conn.V[v0]
@@ -311,6 +316,11 @@ def potential_edge(
     alpha: float, p: float, epsilon: float,
     localized: bool, one_sided: bool,
 ) -> float:
+    """
+    Evaluate the potential from face fidx, at point q
+    Parameters are the same as for the top-pevel potential function
+    returns the value of the potential
+    """
     a = conn.edges[edge_idx, 0]
     b = conn.edges[edge_idx, 1]
     p0 = conn.V[a]
@@ -373,6 +383,13 @@ def vertex_face_term(
     conn: NumbaConnectivity, geom: NumbaGeometry,
     alpha: float, one_sided: bool,
 ) -> tuple[float, float, int]:
+    """
+    Computes directional term for a vertex potential, corresponding to the sum over faces
+    (see the writeup)
+    Along the way, computes closest face to q and signed distance to this face, needed
+    for outside_vertex.
+    """
+
     # get closest face sector and edge ray if any
     face_term = 0.0
     # initialize to inf
@@ -433,10 +450,12 @@ def vertex_edge_term(
     conn: NumbaConnectivity, geom: NumbaGeometry,
     alpha: float, one_sided: bool,
 ) -> tuple[float, float, int, ArrayF]:
-    """This function does two things at once: computes the sum of edge directional factors for the vertex, 
-    and along the way computes the closest edge distance and edge  r_e_min, edge_min,  and projection on closest edge
-    """ 
-
+    """
+    Computes directional term for a vertex potential, corresponding to the sum over edges
+    (see the writeup)
+    Along the way, computes closest edge to q, needed for outside_vertex, the distance to the edge, 
+    and the projection of q to the line of the edge.
+    """
     edge_term = 0.0
     r_e_min = 1e30
     edge_min = -1

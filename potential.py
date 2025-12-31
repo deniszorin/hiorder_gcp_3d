@@ -389,8 +389,22 @@ def smoothed_offset_potential(
     localized: bool = False,
     one_sided: bool = False,
     use_numba: bool = False,
+    use_cpp: bool = False,
 ) -> ArrayF:
     """Compute smoothed offset potential at q points."""
+
+    if use_cpp:
+        from potential_cpp import smoothed_offset_potential_cpp
+
+        return smoothed_offset_potential_cpp(
+            q,
+            mesh.V,
+            mesh.faces,
+            alpha=alpha, p=p, epsilon=epsilon,
+            include_faces=include_faces, include_edges=include_edges,
+            include_vertices=include_vertices,
+            localized=localized, one_sided=one_sided,
+        )
 
     if use_numba:
         from potential_numba import smoothed_offset_potential_numba

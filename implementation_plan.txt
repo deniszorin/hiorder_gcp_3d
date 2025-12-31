@@ -110,15 +110,6 @@ Using obj format.
   - Vertex potential isosurface.
 - Variant: all neighbor z negative (center at 0).
 
-C++ implementation plan
-1) Create a stripped-down `CollisionMesh` in `cpp/` with only Eigen + `eigen_ext.hpp`
-   - Keep rest positions, edges, faces, adjacency (faces/edges/vertices), and boundary flags.
-   - Remove all legacy full-mesh/selection/area/adjacency infrastructure.
-   - Add a simple factory constructor for building the mesh.
-2) Reimplement `potential.py` logic in C++ using the stripped `CollisionMesh`.
-3) Add a Python wrapper to call the C++ potential on lists of query points.
-4) Validate results against the Python implementation.
-
 Numba potential acceleration plan (smoothed_offset_potential) - detailed
 1) Mirror current `smoothed_offset_potential` logic in `potential.py`:
    - Face term: uses `H_alpha(phi_ef)` product and `r_f_abs` in denominator.
@@ -169,3 +160,42 @@ Numba potential acceleration plan (smoothed_offset_potential) - detailed
    - Use small grids (resolution determined after timing).
    - Benchmark both versions with `time.perf_counter`, report speed ratio, and
      choose grid sizes so tests stay under 3 minutes.
+
+ 
+C++ potential + auto-diff plan (using CollisionMesh)
+Mapping from Python MeshData/MeshGeometry to cpp::CollisionMesh (+ derived class)
+- MeshData.V -> CollisionMesh::rest_positions() (Eigen::MatrixXd)
+- MeshData.faces -> CollisionMesh::faces() (Eigen::MatrixXi)
+- MeshData.edges -> CollisionMesh::edges() (Eigen::MatrixXi)
+- MeshData.faces_to_edges -> CollisionMesh::faces_to_edges() (Eigen::MatrixXi)
+- MeshData.edges_to_faces -> CollisionMesh::edges_to_faces() (Eigen::MatrixXi)
+- MeshData.vertices_to_faces -> CollisionMesh::vertices_to_faces() (std::vector<std::vector<int>>)
+- MeshData.vertices_to_edges -> CollisionMesh::vertices_to_edges() (std::vector<std::vector<int>>)
+- MeshGeometry.normals -> new derived member (Eigen::MatrixXd, |F|x3)
+- MeshGeometry.edge_inward -> new derived member (Eigen::MatrixXd or std::array per face, |F|x9)
+- MeshGeometry.edge_normals -> new derived member (Eigen::MatrixXd, |E|x3)
+
+Step 1: C++ double implementation (matches python_numba)
+1) Create a derived class in a new cpp/hpp (do not modify collision_mesh.hpp/.cpp):
+   - Compute/store normals, edge_inward, edge_normals from CollisionMesh data.
+   - Expose accessors for the additional geometry arrays.
+2) Implement C++ potential functions mirroring `potential_numba.py`:
+   - potential_face, potential_edge, potential_vertex, smoothed_offset_potential_point.
+   - Use CollisionMesh adjacency directly (no CSR compression).
+3) Add pybind11 bindings for the C++ potential:
+   - Expose a `smoothed_offset_potential_cpp(q, mesh, alpha, p, ...)`.
+   - Convert numpy arrays to Eigen and build the derived mesh class in C++.
+4) Add Python test module comparing C++ vs numba on the same meshes/grids:
+   - Reuse validation scenes + tetrahedron + flipped cases.
+5) Add a `use_cpp: bool = False` option to `smoothed_offset_potential`
+   and pass it through from `isosurface_with_clip` for visual verification.
+6) Validate consistency vs numba and report timing.
+
+Step 2: Auto-diff (TinyAD)
+1) Templetize the C++ potential code on scalar type `F`:
+   - Keep constants (alpha, p, epsilon, eps, singular_value) and constants in the code like 1.0/2.0 as double.
+   - Do not templetize outside_vertex helpers and cone_hull functions, these should remain as double. 
+2) Instantiate and test for `F=double` (must match Step 1 results).
+3) Instantiate and test for TinyAD autodiff scalar type:
+   - Ensure potential evaluation values match numba (derivatives can be checked later).
+4) Keep the Python verification tests passing unchanged.
