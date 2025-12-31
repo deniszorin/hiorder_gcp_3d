@@ -143,9 +143,82 @@ def find_local_edge(conn: NumbaConnectivity, fidx: int, edge_idx: int) -> int:
             return i
     return -1
 
+# ****************************************************************************
+# Mesh connectivity and geometry conversion to numba-friendly format
+
+
+def _build_csr(adj_lists: list[list[int]]) -> tuple[ArrayI, ArrayI]:
+    offsets = np.zeros(len(adj_lists) + 1, dtype=np.int64)
+    total = 0
+    for i, items in enumerate(adj_lists):
+        offsets[i] = total
+        total += len(items)
+    offsets[len(adj_lists)] = total
+    indices = np.empty(total, dtype=np.int64)
+    k = 0
+    for items in adj_lists:
+        for item in items:
+            indices[k] = item
+            k += 1
+    return offsets, indices
+
+
+def _build_numba_connectivity(mesh) -> NumbaConnectivity:
+    V = np.asarray(mesh.V, dtype=np.float64)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    edges = np.asarray(mesh.edges, dtype=np.int64)
+
+    edge_index = {}
+    for eidx in range(edges.shape[0]):
+        a = int(edges[eidx, 0])
+        b = int(edges[eidx, 1])
+        key = (a, b) if a < b else (b, a)
+        edge_index[key] = eidx
+
+    face_edges = np.zeros((faces.shape[0], 3), dtype=np.int64)
+    for f in range(faces.shape[0]):
+        v0 = int(faces[f, 0])
+        v1 = int(faces[f, 1])
+        v2 = int(faces[f, 2])
+        pairs = ((v0, v1), (v1, v2), (v2, v0))
+        for i, (a, b) in enumerate(pairs):
+            key = (a, b) if a < b else (b, a)
+            face_edges[f, i] = edge_index[key]
+
+    edge_faces = np.full((edges.shape[0], 2), -1, dtype=np.int64)
+    for eidx, faces_list in enumerate(mesh.edges_to_faces):
+        if len(faces_list) > 0:
+            edge_faces[eidx, 0] = faces_list[0]
+        if len(faces_list) > 1:
+            edge_faces[eidx, 1] = faces_list[1]
+
+    vertex_face_offsets, vertex_face_indices = _build_csr(mesh.vertices_to_faces)
+    vertex_edge_offsets, vertex_edge_indices = _build_csr(mesh.vertices_to_edges)
+
+    return NumbaConnectivity(
+        V=V,
+        faces=faces,
+        edges=edges,
+        face_edges=face_edges,
+        edge_faces=edge_faces,
+        vertex_face_offsets=vertex_face_offsets,
+        vertex_face_indices=vertex_face_indices,
+        vertex_edge_offsets=vertex_edge_offsets,
+        vertex_edge_indices=vertex_edge_indices,
+    )
+
+
+def _build_numba_geometry(geom) -> NumbaGeometry:
+    return NumbaGeometry(
+        normals=np.asarray(geom.normals, dtype=np.float64),
+        edge_inward=np.asarray(geom.edge_inward, dtype=np.float64),
+        edge_normals=np.asarray(geom.edge_normals, dtype=np.float64),
+        pointed_vertices=np.asarray(geom.pointed_vertices, dtype=np.bool_),
+    )
+
 
 # ****************************************************************************
-#  Potential components 
+#  Potential directional terms Phi^{e,f}, Phi^{v,e} 
 
 @njit(cache=True)
 def phi_ef(
@@ -572,6 +645,8 @@ def potential_vertex(
         I_v *= h_epsilon_scalar(r_v, epsilon)
     return I_v
 
+# ****************************************************************************
+# Helper to extract unique edge and vertex lists from a face list
 
 @njit(cache=True)
 def get_vertices_and_edges(
@@ -641,6 +716,9 @@ def get_vertices_and_edges(
 
     return edge_list, vertex_list
 
+# ****************************************************************************
+#  Main potential calls
+
 
 @njit(cache=True)
 def smoothed_offset_potential_point(
@@ -650,6 +728,10 @@ def smoothed_offset_potential_point(
     include_faces: bool, include_edges: bool, include_vertices: bool,
     localized: bool, one_sided: bool,
 ) -> float:
+    """
+    Compute potential from faces,edges and vertices given by the face list face_indices at point q.
+    See smoothed_offset_potential for arguments.
+    """
     if not (include_faces or include_edges or include_vertices):
         return 0.0
 
@@ -694,75 +776,6 @@ def _smoothed_offset_potential_numba_impl(
     return out
 
 
-def _build_csr(adj_lists: list[list[int]]) -> tuple[ArrayI, ArrayI]:
-    offsets = np.zeros(len(adj_lists) + 1, dtype=np.int64)
-    total = 0
-    for i, items in enumerate(adj_lists):
-        offsets[i] = total
-        total += len(items)
-    offsets[len(adj_lists)] = total
-    indices = np.empty(total, dtype=np.int64)
-    k = 0
-    for items in adj_lists:
-        for item in items:
-            indices[k] = item
-            k += 1
-    return offsets, indices
-
-
-def _build_numba_connectivity(mesh) -> NumbaConnectivity:
-    V = np.asarray(mesh.V, dtype=np.float64)
-    faces = np.asarray(mesh.faces, dtype=np.int64)
-    edges = np.asarray(mesh.edges, dtype=np.int64)
-
-    edge_index = {}
-    for eidx in range(edges.shape[0]):
-        a = int(edges[eidx, 0])
-        b = int(edges[eidx, 1])
-        key = (a, b) if a < b else (b, a)
-        edge_index[key] = eidx
-
-    face_edges = np.zeros((faces.shape[0], 3), dtype=np.int64)
-    for f in range(faces.shape[0]):
-        v0 = int(faces[f, 0])
-        v1 = int(faces[f, 1])
-        v2 = int(faces[f, 2])
-        pairs = ((v0, v1), (v1, v2), (v2, v0))
-        for i, (a, b) in enumerate(pairs):
-            key = (a, b) if a < b else (b, a)
-            face_edges[f, i] = edge_index[key]
-
-    edge_faces = np.full((edges.shape[0], 2), -1, dtype=np.int64)
-    for eidx, faces_list in enumerate(mesh.edges_to_faces):
-        if len(faces_list) > 0:
-            edge_faces[eidx, 0] = faces_list[0]
-        if len(faces_list) > 1:
-            edge_faces[eidx, 1] = faces_list[1]
-
-    vertex_face_offsets, vertex_face_indices = _build_csr(mesh.vertices_to_faces)
-    vertex_edge_offsets, vertex_edge_indices = _build_csr(mesh.vertices_to_edges)
-
-    return NumbaConnectivity(
-        V=V,
-        faces=faces,
-        edges=edges,
-        face_edges=face_edges,
-        edge_faces=edge_faces,
-        vertex_face_offsets=vertex_face_offsets,
-        vertex_face_indices=vertex_face_indices,
-        vertex_edge_offsets=vertex_edge_offsets,
-        vertex_edge_indices=vertex_edge_indices,
-    )
-
-
-def _build_numba_geometry(geom) -> NumbaGeometry:
-    return NumbaGeometry(
-        normals=np.asarray(geom.normals, dtype=np.float64),
-        edge_inward=np.asarray(geom.edge_inward, dtype=np.float64),
-        edge_normals=np.asarray(geom.edge_normals, dtype=np.float64),
-        pointed_vertices=np.asarray(geom.pointed_vertices, dtype=np.bool_),
-    )
-
 
 def smoothed_offset_potential_numba(
     q: ArrayF,
@@ -771,6 +784,15 @@ def smoothed_offset_potential_numba(
     include_faces: bool = True, include_edges: bool = True, include_vertices: bool = True,
     localized: bool = False, one_sided: bool = False,
 ) -> ArrayF:
+    """
+    Compute potential from a mesh at points in the array q.
+    conn, geom: connectivity and mesh geometry, see geometry.py
+    alpha, p, epsilon: potential parameters, see potential_description.tex
+    include_faces, include_edges, include_vertices: turn on/off the components of the potential.
+    localized: enable h^epsilon factor.
+    one_sided: enable localized sidedness checks in the potential.
+    """
+
     q = np.asarray(q, dtype=float)
     if q.ndim == 1:
         q = q[None, :]
