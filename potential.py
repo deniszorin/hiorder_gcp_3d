@@ -409,9 +409,23 @@ def smoothed_offset_potential(
     include_edges: bool = True,
     include_vertices: bool = True,
     localized: bool = False,
-    one_sided: bool = False
+    one_sided: bool = False,
+    use_numba: bool = False,
 ) -> ArrayF:
     """Compute smoothed offset potential at q points."""
+
+    if use_numba:
+        from potential_numba import smoothed_offset_potential_numba
+
+        return smoothed_offset_potential_numba(
+            q,
+            mesh,
+            geom,
+            alpha=alpha, p=p, epsilon=epsilon,
+            include_faces=include_faces, include_edges=include_edges,
+            include_vertices=include_vertices,
+            localized=localized, one_sided=one_sided,
+        )
 
     # maker it work for a single input point
     q = np.asarray(q, dtype=float)

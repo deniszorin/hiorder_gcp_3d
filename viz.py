@@ -196,6 +196,7 @@ def isosurface_with_clip(
     include_vertices: bool = True,
     alpha: float = 0.1,
     p: float = 2.0,
+    use_numba: bool = False,
     show_mesh: bool = False,
     use_widget: bool = True,
     clip_origin: Optional[ArrayF] = None,
@@ -232,6 +233,7 @@ def isosurface_with_clip(
         include_edges=include_edges,
         include_vertices=include_vertices,
         one_sided=one_sided,
+        use_numba=use_numba,
     )
     log_values = np.log10(np.maximum(values, 1e-12))
 

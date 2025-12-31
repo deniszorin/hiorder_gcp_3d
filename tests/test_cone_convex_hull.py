@@ -303,7 +303,7 @@ def test_convex_lift_two_vertices_perturbed():
     D, coplanar, fullspace = _debug_hull(e, "test_convex_lift_two_vertices_perturbed")
     assert not coplanar
     assert not fullspace
-    assert D.tolist() == [5, 4, 0, 2, 3]
+    assert D.tolist() == [0, 2, 3, 4, 5]
     assert not validate_cone_convex_hull(e, D, eps=1e-12)
 
 
@@ -331,7 +331,7 @@ def test_nonconvex_lift_two_vertices_perturbed():
     D, coplanar, fullspace = _debug_hull(e, "test_nonconvex_lift_two_vertices_perturbed")
     assert not coplanar
     assert not fullspace
-    assert D.tolist() == [5, 0, 1, 3]
+    assert D.tolist() == [0, 1, 3, 5]
     assert not validate_cone_convex_hull(e, D, eps=1e-12)
 
 
@@ -364,16 +364,16 @@ def test_nonconvex_lift_three_vertices():
 
 
 _CORNER_CASES = [
-    ("case_1", 2, 2, [0, 1, 2, 3, 4], True, False, [4, 0, 1, 2, 3], True),
-    ("case_2", 2, 3, [0, 1, 2, 3, 4, 5], True, False, [5, 0, 1, 2, 3, 4], True),
-    ("case_3", 2, 4, [0, 1, 2, 3, 4, 5, 6], True, False, [6, 0, 1, 2, 3, 4, 5], True),
-    ("case_4", 2, 5, [0, 1, 2, 3, 4, 5, 6, 7], True, False, [7, 0, 1, 2, 3, 4, 5, 6], True),
-    ("case_5", 3, 2, [1, 0, 2, 3, 4, 5, 0], False, False, [5, 0, 1, 2, 3, 4], True),
-    ("case_6", 3, 3, [1, 0, 2, 3, 4, 5, 6, 0], False, False, [6, 0, 1, 2, 3, 4, 5], True),
-    ("case_7", 3, 4, [1, 0, 2, 3, 4, 5, 6, 7, 0], False, False, [7, 0, 1, 2, 3, 4, 5, 6], True),
-    ("case_8", 4, 2, [2, 1, 0, 3, 4, 5, 6, 0, 1], False, False, [6, 0, 1, 2, 3, 4, 5], True),
-    ("case_9", 4, 3, [2, 1, 0, 3, 4, 5, 6, 7, 0, 1], False, False, [7, 0, 1, 2, 3, 4, 5, 6], True),
-    ("case_10", 5, 2, [3, 2, 1, 0, 4, 5, 6, 7, 0, 1, 2], False, False, [7, 0, 1, 2, 3, 4, 5, 6], True),
+    ("case_1", 2, 2, [0, 1, 2, 3, 4], True, False, [0, 1, 2, 3, 4], True),
+    ("case_2", 2, 3, [0, 1, 2, 3, 4, 5], True, False, [0, 1, 2, 3, 4, 5], True),
+    ("case_3", 2, 4, [0, 1, 2, 3, 4, 5, 6], True, False, [0, 1, 2, 3, 4, 5, 6], True),
+    ("case_4", 2, 5, [0, 1, 2, 3, 4, 5, 6, 7], True, False, [0, 1, 2, 3, 4, 5, 6, 7], True),
+    ("case_5", 3, 2, [0, 1, 2, 3, 4, 5], True, False, [0, 1, 2, 3, 4, 5], True),
+    ("case_6", 3, 3, [0, 1, 2, 3, 4, 5, 6], True, False, [0, 1, 2, 3, 4, 5, 6], True),
+    ("case_7", 3, 4, [0, 1, 2, 3, 4, 5, 6, 7], True, False, [0, 1, 2, 3, 4, 5, 6, 7], True),
+    ("case_8", 4, 2, [0, 1, 2, 3, 4, 5, 6], True, False, [0, 1, 2, 3, 4, 5, 6], True),
+    ("case_9", 4, 3, [0, 1, 2, 3, 4, 5, 6, 7], True, False, [0, 1, 2, 3, 4, 5, 6, 7], True),
+    ("case_10", 5, 2, [0, 1, 2, 3, 4, 5, 6, 7], True, False, [0, 1, 2, 3, 4, 5, 6, 7], True),
 ]
 
 

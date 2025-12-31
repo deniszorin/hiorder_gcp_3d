@@ -118,3 +118,54 @@ C++ implementation plan
 2) Reimplement `potential.py` logic in C++ using the stripped `CollisionMesh`.
 3) Add a Python wrapper to call the C++ potential on lists of query points.
 4) Validate results against the Python implementation.
+
+Numba potential acceleration plan (smoothed_offset_potential) - detailed
+1) Mirror current `smoothed_offset_potential` logic in `potential.py`:
+   - Face term: uses `H_alpha(phi_ef)` product and `r_f_abs` in denominator.
+   - Edge term: uses `H_alpha(phi_ve)` and per-edge face factors `H_alpha(phi_ef)`.
+   - Vertex term: uses per-face and per-edge directional factors with the same formulas.
+   - One-sided/localized branches need the same behavior as `outside_face/edge/vertex`.
+2) Add `potential_numba.py` with Numba-friendly helpers (scalar, point-level):
+   - `h_local_scalar`, `h_epsilon_scalar`, `H_scalar`, `H_alpha_scalar`.
+   - Vector helpers: `safe_norm`, `unit_vec`, `project_point_to_line`.
+   - Phi helpers: `phi_ef_scalar(q, p0, p1, n, edge_inward)` and
+     `phi_ve_scalar(q, p0, p1)` to compute Phi^{e,f}, Phi^{v,e} inside the element functions.
+   - One-sided helpers mirroring `outside_face`, `outside_edge`, `outside_vertex`:
+     `outside_face_scalar`, `outside_edge_scalar`, `_vertex_face_edge_candidates_scalar`,
+     `outside_vertex_scalar` (all scalar, no precomputed `PotentialTerms`).
+   - To reduce recompute, pass intermediate quantities from `potential_face`,
+     `potential_edge`, `potential_vertex` into their `outside_*` counterparts
+     (e.g., r_f, r_e, P_e, Phi^{e,f}, Phi^{v,e}) instead of re-deriving them.
+3) Add the required element/point evaluators:
+   - `potential_face(q, fidx, conn, geom, alpha, p, epsilon, localized, one_sided)`.
+   - `potential_edge(q, eidx, conn, geom, alpha, p, epsilon, localized, one_sided)`.
+   - `potential_vertex(q, vidx, conn, geom, alpha, p, epsilon, localized, one_sided)`.
+   - `smoothed_offset_potential_point(q, face_indices, conn, geom, ...)` that:
+     - Sums face contributions over `face_indices`.
+     - Collects unique edges/vertices referenced by those faces using marker arrays.
+     - Sums edge/vertex contributions once per unique element.
+4) Dataclass changes / additions:
+   - Keep `MeshData`/`MeshGeometry` unchanged.
+   - Add a new frozen dataclass (e.g., `NumbaConnectivity`) in `potential_numba.py`
+     holding only ndarrays: `V`, `faces`, `edges`, `face_edges` (nf,3),
+     `edge_faces` (ne,2 with -1 for boundary), `vertex_face_offsets/indices`
+     and `vertex_edge_offsets/indices` (CSR-style).
+   - If needed, add a lightweight `NumbaGeometry` dataclass that just wraps the
+     existing `MeshGeometry` arrays for numba calls.
+5) Build the ndarray connectivity copy inside `smoothed_offset_potential_numba`:
+   - Convert `MeshData` lists (`edges`, `vertices_to_faces`, `edges_to_faces`,
+     `vertices_to_edges`) into the arrays above.
+   - Precompute `face_edges` to avoid `get_local_index`/edge searches.
+6) Add `smoothed_offset_potential_numba` with the same signature as
+   `smoothed_offset_potential`:
+   - Build full `face_indices = np.arange(nf)` for now (future per-point subsets).
+   - Loop over points and call `smoothed_offset_potential_point`.
+7) Wire a `use_numba: bool = False` flag into `smoothed_offset_potential`
+   and dispatch to `potential_numba.smoothed_offset_potential_numba`
+   (no other edits to `potential.py`).
+8) Tests and timing:
+   - New test module compares python vs numba on meshes from
+     `viz.build_validation_scenes()` and `tests/test_potential.py` helpers.
+   - Use small grids (resolution determined after timing).
+   - Benchmark both versions with `time.perf_counter`, report speed ratio, and
+     choose grid sizes so tests stay under 3 minutes.
