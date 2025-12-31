@@ -7,6 +7,8 @@ from typing import List
 
 import numpy as np
 
+from cone_convex_hull import pointed_vertex
+
 
 ArrayF = np.ndarray
 ArrayI = np.ndarray
@@ -47,12 +49,14 @@ class MeshGeometry:
     edge_dirs: (M, 3, 3) edge direction unit vectors for edges (v0->v1, v1->v2, v2->v0).
     edge_inward: (M, 3, 3) inward edge normals (n x d_e).
     edge_normals: (E, 3) average normals per edge (sum of incident face normals, normalized).
+    pointed_vertices: (N,) boolean array of pointed vertex flags.
     """
 
     normals: ArrayF
     edge_dirs: ArrayF
     edge_inward: ArrayF
     edge_normals: ArrayF
+    pointed_vertices: ArrayF
 
 
 def load_obj_mesh(path: str) -> MeshData:
@@ -115,6 +119,95 @@ def build_connectivity(mesh: MeshData) -> tuple[
     return edges, vertices_to_faces, edges_to_faces, vertices_to_edges
 
 
+def _order_vectors_ccw(
+    vectors: List[ArrayF], normal: ArrayF, eps: float = 1e-12
+) -> np.ndarray | None:
+    n_norm = np.linalg.norm(normal)
+    if n_norm <= eps:
+        return None
+    n = normal / n_norm
+
+    projections: List[ArrayF] = []
+    for vec in vectors:
+        proj = vec - np.dot(vec, n) * n
+        proj_norm = np.linalg.norm(proj)
+        if proj_norm > eps:
+            proj = proj / proj_norm
+        projections.append(proj)
+
+    ref = None
+    for proj in projections:
+        if np.linalg.norm(proj) > eps:
+            ref = proj
+            break
+    if ref is None:
+        return None
+
+    angles = []
+    for proj in projections:
+        proj_norm = np.linalg.norm(proj)
+        if proj_norm <= eps:
+            angle = 0.0
+        else:
+            angle = np.arctan2(np.dot(n, np.cross(ref, proj)), np.dot(ref, proj))
+        angles.append(angle)
+
+    return np.argsort(np.asarray(angles))
+
+
+def _ordered_vertex_neighbors(mesh: MeshData, v_idx: int) -> List[int] | None:
+    next_map: dict[int, int] = {}
+    prev_map: dict[int, int] = {}
+    neighbors: set[int] = set()
+
+    for f in mesh.vertices_to_faces[v_idx]:
+        face = mesh.faces[f]
+        loc = None
+        for i in range(3):
+            if face[i] == v_idx:
+                loc = i
+                break
+        if loc is None:
+            continue
+        neighbor_after = int(face[(loc + 1) % 3])
+        neighbor_before = int(face[(loc + 2) % 3])
+        neighbors.add(neighbor_after)
+        neighbors.add(neighbor_before)
+
+        if neighbor_after in next_map and next_map[neighbor_after] != neighbor_before:
+            return None
+        next_map[neighbor_after] = neighbor_before
+
+        if neighbor_before in prev_map and prev_map[neighbor_before] != neighbor_after:
+            return None
+        prev_map[neighbor_before] = neighbor_after
+
+    if not next_map:
+        return None
+
+    start = None
+    for neighbor in next_map:
+        if neighbor not in prev_map:
+            start = neighbor
+            break
+    if start is None:
+        start = min(next_map)
+
+    order: List[int] = []
+    current = start
+    visited: set[int] = set()
+    while current is not None and current not in visited:
+        visited.add(current)
+        order.append(current)
+        current = next_map.get(current)
+        if current is None or current == start:
+            break
+
+    if len(order) != len(neighbors):
+        return None
+    return order
+
+
 def precompute_mesh_geometry(mesh: MeshData) -> MeshGeometry:
     """Precompute mesh geometry used by potentials."""
 
@@ -162,9 +255,61 @@ def precompute_mesh_geometry(mesh: MeshData) -> MeshGeometry:
             n_sum = n_sum / n_norm
         edge_normals[eidx] = n_sum
 
+    nv = V.shape[0]
+    vertex_normals = np.zeros((nv, 3), dtype=float)
+    for v in range(nv):
+        n_sum = np.zeros(3, dtype=float)
+        for f in mesh.vertices_to_faces[v]:
+            n_sum += normals[f]
+        n_norm = np.linalg.norm(n_sum)
+        if n_norm > 1e-12:
+            vertex_normals[v] = n_sum / n_norm
+
+    pointed_vertices = np.zeros(nv, dtype=bool)
+    for v in range(nv):
+        ordered_vectors = None
+        neighbors = _ordered_vertex_neighbors(mesh, v)
+        if neighbors is not None:
+            vectors = []
+            for other in neighbors:
+                vec = V[other] - V[v]
+                vec_norm = np.linalg.norm(vec)
+                if vec_norm <= 1e-12:
+                    continue
+                vectors.append(vec / vec_norm)
+            if len(vectors) >= 3:
+                ordered_vectors = np.asarray(vectors, dtype=float)
+
+        if ordered_vectors is None:
+            edge_indices = mesh.vertices_to_edges[v]
+            if len(edge_indices) < 3:
+                continue
+            n = vertex_normals[v]
+            if np.linalg.norm(n) <= 1e-12:
+                continue
+            vectors = []
+            for edge_idx in edge_indices:
+                a, b = mesh.edges[edge_idx]
+                other = b if a == v else a
+                vec = V[other] - V[v]
+                vec_norm = np.linalg.norm(vec)
+                if vec_norm <= 1e-12:
+                    continue
+                vectors.append(vec / vec_norm)
+            if len(vectors) < 3:
+                continue
+            order = _order_vectors_ccw(vectors, n)
+            if order is None:
+                continue
+            ordered_vectors = np.asarray([vectors[i] for i in order], dtype=float)
+
+        if ordered_vectors is not None:
+            pointed_vertices[v] = pointed_vertex(ordered_vectors)
+
     return MeshGeometry(
         normals=normals,
         edge_dirs=edge_dirs,
         edge_inward=edge_inward,
         edge_normals=edge_normals,
+        pointed_vertices=pointed_vertices,
     )

@@ -35,6 +35,7 @@ class NumbaGeometry(NamedTuple):
     normals: ArrayF  # nf x 3 
     edge_inward: ArrayF  # nf x 3 x 3 inward pointing unit vectors for each edge 
     edge_normals: ArrayF  # ne x 3  average of face normals per edge
+    pointed_vertices: ArrayF  # nv boolean pointed vertex flags
 
 
 # ****************************************************************************
@@ -279,15 +280,9 @@ def outside_vertex_scalar(
         if abs(dots) > eps:
             return dots < 0.0
 
-    start_f = conn.vertex_face_offsets[v_idx]
-    end_f = conn.vertex_face_offsets[v_idx + 1]
-    # if any points left unassigned after a pass over all edges
-    # all their neighnors are in the plane perp to q - p_v
-    if start_f < end_f:
-        n0 = geom.normals[conn.vertex_face_indices[start_f]]
-        # !!!! this is wrong
-        return dot3(q_v, n0) > 0.0
-    return False
+    # if any points left unassigned after a pass over all edges, use the
+    # pointed-vertex flag for those vertex-closest queries.
+    return geom.pointed_vertices[v_idx]
 
 
 @njit(cache=True)
@@ -761,6 +756,7 @@ def _build_numba_geometry(geom) -> NumbaGeometry:
         normals=np.asarray(geom.normals, dtype=np.float64),
         edge_inward=np.asarray(geom.edge_inward, dtype=np.float64),
         edge_normals=np.asarray(geom.edge_normals, dtype=np.float64),
+        pointed_vertices=np.asarray(geom.pointed_vertices, dtype=np.bool_),
     )
 
 

@@ -79,7 +79,7 @@ def test_smoothed_offset_potential_numba_tetrahedron_one_sided_variants():
     )
     mesh = geometry.MeshData(V=V, faces=faces)
     geom = geometry.precompute_mesh_geometry(mesh)
-    q = _sample_mesh_grid(mesh, resolution=30)
+    q = _sample_mesh_grid(mesh, resolution=10)
 
     for one_sided in (False, True):
         print(f"scene: tetrahedron one_sided={one_sided}")

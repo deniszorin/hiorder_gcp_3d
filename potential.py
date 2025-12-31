@@ -385,13 +385,10 @@ def outside_vertex(
             assigned |= mask
             if np.all(assigned):
                 break
-        # if any points left unassigned after a pass over all edges
-        # all their neighnors are in the plane perp to q - p_v
+        # if any points left unassigned after a pass over all edges, use
+        # the pointed-vertex flag for those vertex-closest queries.
         if np.any(~assigned):
-            face_list = mesh.vertices_to_faces[v_idx]
-            n0 = geom.normals[face_list[0]] # if face_list else np.zeros(3, dtype=float)
-            dots = q_v @ n0
-            out_v[~assigned] = dots[~assigned] > 0
+            out_v[~assigned] = geom.pointed_vertices[v_idx]
         out[idx] = out_v
         closest[idx] = p_v
 

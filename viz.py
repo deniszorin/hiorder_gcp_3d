@@ -186,6 +186,64 @@ def visualize_isosurface(
     return p
 
 
+def visualize_pointed_vertices(
+    mesh: MeshData,
+    point_size: float = 12.0,
+    sphere_radius: Optional[float] = None,
+    show_mesh: bool = True,
+):
+    """Visualize pointed vertices on a mesh using PyVista."""
+
+    try:
+        import pyvista as pv
+    except ImportError as exc:  # pragma: no cover - visualization dependency
+        raise ImportError("pyvista is required for visualization.") from exc
+
+    from geometry import precompute_mesh_geometry
+    geom = precompute_mesh_geometry(mesh)
+
+    faces = np.hstack(
+        [np.full((mesh.faces.shape[0], 1), 3, dtype=np.int64), mesh.faces.astype(np.int64)]
+    ).ravel()
+    pv_mesh = pv.PolyData(mesh.V, faces)
+
+    pointed = geom.pointed_vertices
+    points = mesh.V[pointed]
+
+    plotter = pv.Plotter()
+    if show_mesh:
+        plotter.add_mesh(pv_mesh, color="white", opacity=0.9, show_edges=True)
+
+    extent = mesh.V.max(axis=0) - mesh.V.min(axis=0)
+    normal_length = 0.2 * float(np.max(extent))
+    for face in mesh.faces:
+        p0, p1, p2 = mesh.V[face[0]], mesh.V[face[1]], mesh.V[face[2]]
+        n = np.cross(p1 - p0, p2 - p0)
+        n_norm = np.linalg.norm(n)
+        if n_norm <= 1e-12:
+            continue
+        n = n / n_norm
+        center = (p0 + p1 + p2) / 3.0
+        arrow = pv.Line(center, center + normal_length * n)
+        plotter.add_mesh(arrow, color="#1f78b4", line_width=2)
+
+    if points.size:
+        cloud = pv.PolyData(points)
+        if sphere_radius is not None:
+            spheres = cloud.glyph(geom=pv.Sphere(radius=sphere_radius), scale=False)
+            plotter.add_mesh(spheres, color="#e34a33")
+        else:
+            plotter.add_mesh(
+                cloud,
+                color="#e34a33",
+                point_size=point_size,
+                render_points_as_spheres=True,
+            )
+
+    plotter.show()
+    return plotter
+
+
 def isosurface_with_clip(
     mesh: MeshData,
     levels: Optional[Sequence[float]] = None,

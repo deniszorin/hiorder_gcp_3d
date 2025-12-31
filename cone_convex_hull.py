@@ -159,3 +159,37 @@ def compute_cone_convex_hull(e: ArrayF, eps: float = 1e-12) -> ConeHullResult:
     return ConeHullResult(
         indices=indices, valid=valid, coplanar=coplanar, fullspace=fullspace
     )
+
+
+def pointed_vertex(e: ArrayF, eps: float = 1e-12) -> bool:
+    """Return True when the convex cone is pointed (polar cone outside)."""
+
+    e = np.asarray(e, dtype=float)
+    if e.ndim != 2 or e.shape[1] != 3:
+        raise ValueError("e must be (n, 3).")
+    if e.shape[0] < 3:
+        return False
+
+    result = compute_cone_convex_hull(e, eps=eps)
+    if result.coplanar or result.fullspace:
+        return False
+
+    indices = result.indices
+    m = indices.size
+    if m < 3:
+        return False
+
+    for i in range(m):
+        a = e[indices[i]]
+        b = e[indices[(i + 1) % m]]
+        n = np.cross(a, b)
+        if np.linalg.norm(n) <= eps:
+            continue
+        for j in range(m):
+            if j == i or j == (i + 1) % m:
+                continue
+            c = e[indices[j]]
+            dot = np.dot(n, c)
+            if abs(dot) > eps:
+                return dot < 0.0
+    return False
