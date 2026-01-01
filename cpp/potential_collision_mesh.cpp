@@ -2,8 +2,6 @@
 
 #include "cone_convex_hull.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <optional>
 #include <stdexcept>
 #include <unordered_map>
@@ -14,62 +12,6 @@ namespace ipc {
 namespace {
 
 constexpr double kEps = 1e-12;
-
-std::optional<std::vector<int>> order_vectors_ccw(
-    const std::vector<Eigen::Vector3d>& vectors,
-    const Eigen::Vector3d& normal)
-{
-    const double n_norm = normal.norm();
-    if (n_norm <= kEps) {
-        return std::nullopt;
-    }
-    const Eigen::Vector3d n = normal / n_norm;
-
-    std::vector<Eigen::Vector3d> projections;
-    projections.reserve(vectors.size());
-    for (const auto& vec : vectors) {
-        Eigen::Vector3d proj = vec - vec.dot(n) * n;
-        const double proj_norm = proj.norm();
-        if (proj_norm > kEps) {
-            proj /= proj_norm;
-        }
-        projections.push_back(proj);
-    }
-
-    bool has_ref = false;
-    Eigen::Vector3d ref(0.0, 0.0, 0.0);
-    for (const auto& proj : projections) {
-        if (proj.norm() > kEps) {
-            ref = proj;
-            has_ref = true;
-            break;
-        }
-    }
-    if (!has_ref) {
-        return std::nullopt;
-    }
-
-    std::vector<double> angles;
-    angles.reserve(projections.size());
-    for (const auto& proj : projections) {
-        const double proj_norm = proj.norm();
-        double angle = 0.0;
-        if (proj_norm > kEps) {
-            angle = std::atan2(n.dot(ref.cross(proj)), ref.dot(proj));
-        }
-        angles.push_back(angle);
-    }
-
-    std::vector<int> order;
-    order.reserve(angles.size());
-    for (int i = 0; i < static_cast<int>(angles.size()); i++) {
-        order.push_back(i);
-    }
-    std::sort(order.begin(), order.end(), [&](const int a, const int b) {
-        return angles[static_cast<size_t>(a)] < angles[static_cast<size_t>(b)];
-    });
-    return order;
-}
 
 std::optional<std::vector<int>> ordered_vertex_neighbors(
     const PotentialCollisionMesh& mesh,
@@ -237,63 +179,22 @@ void PotentialCollisionMesh::compute_edge_normals()
     }
 }
 
-void PotentialCollisionMesh::compute_vertex_normals()
-{
-    const int nv = static_cast<int>(num_vertices());
-    m_vertex_normals.resize(nv, 3);
-    for (int v = 0; v < nv; v++) {
-        Eigen::Vector3d n_sum(0.0, 0.0, 0.0);
-        for (const int f : vertices_to_faces()[static_cast<size_t>(v)]) {
-            n_sum += m_normals.row(f);
-        }
-        const double n_norm = n_sum.norm();
-        if (n_norm > kEps) {
-            n_sum /= n_norm;
-        }
-        m_vertex_normals.row(v) = n_sum;
-    }
-}
-
 void PotentialCollisionMesh::compute_pointed_vertices()
 {
-    compute_vertex_normals();
     const Eigen::MatrixXd& V = rest_positions();
     const int nv = static_cast<int>(num_vertices());
     m_pointed_vertices.assign(static_cast<size_t>(nv), 0);
 
     for (int v = 0; v < nv; v++) {
         std::optional<std::vector<int>> neighbors = ordered_vertex_neighbors(*this, v);
+        if (!neighbors.has_value()) {
+            throw std::runtime_error(
+                "Failed to order vertex neighbors at vertex "
+                + std::to_string(v) + ".");
+        }
         std::vector<Eigen::Vector3d> vectors;
-        if (neighbors.has_value()) {
-            for (const int other : neighbors.value()) {
-                Eigen::Vector3d vec = V.row(other) - V.row(v);
-                const double vec_norm = vec.norm();
-                if (vec_norm <= kEps) {
-                    continue;
-                }
-                vectors.push_back(vec / vec_norm);
-            }
-            if (vectors.size() >= 3) {
-                if (pointed_vertex(vectors)) {
-                    m_pointed_vertices[static_cast<size_t>(v)] = 1;
-                }
-                continue;
-            }
-        }
-
-        const auto& edge_indices = vertices_to_edges()[static_cast<size_t>(v)];
-        if (edge_indices.size() < 3) {
-            continue;
-        }
-        const Eigen::Vector3d n = m_vertex_normals.row(v);
-        if (n.norm() <= kEps) {
-            continue;
-        }
-        vectors.clear();
-        for (const int edge_idx : edge_indices) {
-            const int a = edges()(edge_idx, 0);
-            const int b = edges()(edge_idx, 1);
-            const int other = (a == v) ? b : a;
+        vectors.reserve(neighbors->size());
+        for (const int other : neighbors.value()) {
             Eigen::Vector3d vec = V.row(other) - V.row(v);
             const double vec_norm = vec.norm();
             if (vec_norm <= kEps) {
@@ -301,19 +202,7 @@ void PotentialCollisionMesh::compute_pointed_vertices()
             }
             vectors.push_back(vec / vec_norm);
         }
-        if (vectors.size() < 3) {
-            continue;
-        }
-        const auto order = order_vectors_ccw(vectors, n);
-        if (!order.has_value()) {
-            continue;
-        }
-        std::vector<Eigen::Vector3d> ordered_vectors;
-        ordered_vectors.reserve(order->size());
-        for (const int idx : order.value()) {
-            ordered_vectors.push_back(vectors[static_cast<size_t>(idx)]);
-        }
-        if (pointed_vertex(ordered_vectors)) {
+        if (pointed_vertex(vectors)) {
             m_pointed_vertices[static_cast<size_t>(v)] = 1;
         }
     }

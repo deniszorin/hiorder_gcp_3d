@@ -154,7 +154,8 @@ def _order_vectors_ccw(
 
     return np.argsort(np.asarray(angles))
 
-
+# stupid but unavoidable without extra assumptions on the collision mesh data 
+# it is unclear if it guarantees ordering
 def _ordered_vertex_neighbors(mesh: MeshData, v_idx: int) -> List[int] | None:
     next_map: dict[int, int] = {}
     prev_map: dict[int, int] = {}
@@ -256,55 +257,23 @@ def precompute_mesh_geometry(mesh: MeshData) -> MeshGeometry:
         edge_normals[eidx] = n_sum
 
     nv = V.shape[0]
-    vertex_normals = np.zeros((nv, 3), dtype=float)
-    for v in range(nv):
-        n_sum = np.zeros(3, dtype=float)
-        for f in mesh.vertices_to_faces[v]:
-            n_sum += normals[f]
-        n_norm = np.linalg.norm(n_sum)
-        if n_norm > 1e-12:
-            vertex_normals[v] = n_sum / n_norm
-
     pointed_vertices = np.zeros(nv, dtype=bool)
     for v in range(nv):
-        ordered_vectors = None
         neighbors = _ordered_vertex_neighbors(mesh, v)
-        if neighbors is not None:
-            vectors = []
-            for other in neighbors:
-                vec = V[other] - V[v]
-                vec_norm = np.linalg.norm(vec)
-                if vec_norm <= 1e-12:
-                    continue
-                vectors.append(vec / vec_norm)
-            if len(vectors) >= 3:
-                ordered_vectors = np.asarray(vectors, dtype=float)
-
-        if ordered_vectors is None:
-            edge_indices = mesh.vertices_to_edges[v]
-            if len(edge_indices) < 3:
+        if neighbors is None:
+            raise ValueError(f"Failed to order vertex neighbors at vertex {v}.")
+        vectors = []
+        for other in neighbors:
+            vec = V[other] - V[v]
+            vec_norm = np.linalg.norm(vec)
+            if vec_norm <= 1e-12:
                 continue
-            n = vertex_normals[v]
-            if np.linalg.norm(n) <= 1e-12:
-                continue
-            vectors = []
-            for edge_idx in edge_indices:
-                a, b = mesh.edges[edge_idx]
-                other = b if a == v else a
-                vec = V[other] - V[v]
-                vec_norm = np.linalg.norm(vec)
-                if vec_norm <= 1e-12:
-                    continue
-                vectors.append(vec / vec_norm)
-            if len(vectors) < 3:
-                continue
-            order = _order_vectors_ccw(vectors, n)
-            if order is None:
-                continue
-            ordered_vectors = np.asarray([vectors[i] for i in order], dtype=float)
-
-        if ordered_vectors is not None:
-            pointed_vertices[v] = pointed_vertex(ordered_vectors)
+            vectors.append(vec / vec_norm)
+        if vectors:
+            ordered_vectors = np.asarray(vectors, dtype=float)
+        else:
+            ordered_vectors = np.zeros((0, 3), dtype=float)
+        pointed_vertices[v] = pointed_vertex(ordered_vectors)
 
     return MeshGeometry(
         normals=normals,
