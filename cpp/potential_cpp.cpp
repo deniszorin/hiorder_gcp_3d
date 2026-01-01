@@ -12,12 +12,6 @@ namespace {
 constexpr double kSingularValue = 1e12;
 constexpr double kEps = 1e-12;
 
-struct EdgeProjection {
-    Eigen::Vector3d P_e;
-    double r_e;
-    Eigen::Vector3d unit_Pe_to_q;
-};
-
 struct PotentialParameters {
     double alpha;
     double p;
@@ -27,7 +21,6 @@ struct PotentialParameters {
 };
 
 using FacePoints = std::array<Eigen::Vector3d, 3>;
-using EdgePoints = std::array<Eigen::Vector3d, 2>;
 using FacePointsPair = std::array<FacePoints, 2>;
 
 // ****************************************************************************
@@ -89,19 +82,19 @@ inline Eigen::Vector3d face_edge_inward(
     return n.cross(d_e);
 }
 
-EdgeProjection edge_projection(
-    const Eigen::Vector3d& q, const Eigen::Vector3d& p0, const Eigen::Vector3d& d_unit)
+inline void edge_projection(
+    const Eigen::Vector3d& q, const Eigen::Vector3d& p0, const Eigen::Vector3d& d_unit,
+    Eigen::Vector3d& P_e, double& r_e, Eigen::Vector3d& unit_Pe_to_q)
 {
     // the choice of the direction on the edge does not affect
     // projected position P_e can use any
     const double t = (q - p0).dot(d_unit);
-    const Eigen::Vector3d P_e = p0 + t * d_unit;
+    P_e = p0 + t * d_unit;
     // P_e: projection of q to each edge line.
     // r_e: distance from q to each edge line.
     const Eigen::Vector3d diff = q - P_e;
-    const double r_e = diff.norm();
-    const Eigen::Vector3d unit_Pe_to_q = diff / safe_norm(diff);
-    return EdgeProjection{ P_e, r_e, unit_Pe_to_q };
+    r_e = diff.norm();
+    unit_Pe_to_q = diff / safe_norm(diff);
 }
 
 // ****************************************************************************
@@ -160,11 +153,16 @@ double phi_ef(
     Eigen::Vector3d edge_p0;
     Eigen::Vector3d edge_p1;
     face_edge_endpoints(p0, p1, p2, local_edge, edge_p0, edge_p1);
+
     const Eigen::Vector3d d_unit = unit_dir(edge_p0, edge_p1);
-    const EdgeProjection proj = edge_projection(q, edge_p0, d_unit);
+    Eigen::Vector3d P_e;
+    double r_e;
+    Eigen::Vector3d unit_Pe_to_q;
+    edge_projection(q, edge_p0, d_unit, P_e, r_e, unit_Pe_to_q);
+
     // Phi^{e,f} := (q - P_e)_+ dot (n x d_e[i]) per face
     const Eigen::Vector3d edge_inward = face_edge_inward(n, p0, p1, p2, local_edge);
-    return proj.unit_Pe_to_q.dot(edge_inward);
+    return unit_Pe_to_q.dot(edge_inward);
 }
 
 std::pair<double, double> phi_ve(
@@ -174,6 +172,7 @@ std::pair<double, double> phi_ve(
 {
     const Eigen::Vector3d unit0 = unit_dir(p0, q);
     const Eigen::Vector3d unit1 = unit_dir(p1, q);
+    
     // Phi^{i,e}, i=0,1 factors per edge
     const double phi0 = unit0.dot(d_unit);
     const double phi1 = unit1.dot(-d_unit);
@@ -184,16 +183,16 @@ Eigen::Vector3d edge_normal_from_faces(
     const FacePointsPair& face_points, const bool has_f1)
 {
     const auto& f0 = face_points[0];
-    Eigen::Vector3d n_sum = face_normal(f0[0], f0[1], f0[2]);
+    Eigen::Vector3d n_avg = face_normal(f0[0], f0[1], f0[2]);
     if (has_f1) {
         const auto& f1 = face_points[1];
-        n_sum += face_normal(f1[0], f1[1], f1[2]);
+        n_avg += face_normal(f1[0], f1[1], f1[2]);
     }
-    const double n_norm = n_sum.norm();
+    const double n_norm = n_avg.norm();
     if (n_norm > kEps) {
-        n_sum /= n_norm;
+        n_avg /= n_norm;
     }
-    return n_sum;
+    return n_avg;
 }
 
 // ****************************************************************************
@@ -329,43 +328,43 @@ double potential_face(
 }
 
 double potential_edge(
-    const Eigen::Vector3d& q, const EdgePoints& edge_points,
-    const FacePointsPair& face_points,
+    const Eigen::Vector3d& q, const FacePointsPair& face_points,
     const int local0, const int local1, const bool has_f1,
     const PotentialParameters& params)
 {
-    const auto& p0 = edge_points[0];
-    const auto& p1 = edge_points[1];
+    const auto& f0 = face_points[0];
+    Eigen::Vector3d edge_p0;
+    Eigen::Vector3d edge_p1;
+    face_edge_endpoints(f0[0], f0[1], f0[2], local0, edge_p0, edge_p1);
 
-    const Eigen::Vector3d d_unit = unit_dir(p0, p1);
-    const EdgeProjection proj = edge_projection(q, p0, d_unit);
-    const auto phi_pair = phi_ve(q, p0, p1, d_unit);
+    const Eigen::Vector3d d_unit = unit_dir(edge_p0, edge_p1);
+    Eigen::Vector3d P_e;
+    double r_e;
+    Eigen::Vector3d unit_Pe_to_q;
+    edge_projection(q, edge_p0, d_unit, P_e, r_e, unit_Pe_to_q);
+    const auto phi_pair = phi_ve(q, edge_p0, edge_p1, d_unit);
     const double phi0 = phi_pair.first;
     const double phi1 = phi_pair.second;
 
-    double phi_ef0 = 0.0;
-    double r_f0 = 0.0;
-    double h_face_0 = 0.0;
-    const auto& f0 = face_points[0];
     const Eigen::Vector3d n0 = face_normal(f0[0], f0[1], f0[2]);
     const Eigen::Vector3d edge_inward_0 =
         face_edge_inward(n0, f0[0], f0[1], f0[2], local0);
-    phi_ef0 = proj.unit_Pe_to_q.dot(edge_inward_0);
-    h_face_0 = H_alpha(phi_ef0, params.alpha);
-    r_f0 = (q - f0[0]).dot(n0);
+    const double phi_ef0 = unit_Pe_to_q.dot(edge_inward_0);
+    double h_face_0 = H_alpha(phi_ef0, params.alpha);
+    const double r_f0 = (q - f0[0]).dot(n0);
     if (params.one_sided) {
         h_face_0 *= outside_face(r_f0);
     }
 
+    double h_face_1 = 0.0;
     double phi_ef1 = 0.0;
     double r_f1 = 0.0;
-    double h_face_1 = 0.0;
     if (has_f1) {
         const auto& f1 = face_points[1];
         const Eigen::Vector3d n1 = face_normal(f1[0], f1[1], f1[2]);
         const Eigen::Vector3d edge_inward_1 =
             face_edge_inward(n1, f1[0], f1[1], f1[2], local1);
-        phi_ef1 = proj.unit_Pe_to_q.dot(edge_inward_1);
+        phi_ef1 = unit_Pe_to_q.dot(edge_inward_1);
         h_face_1 = H_alpha(phi_ef1, params.alpha);
         r_f1 = (q - f1[0]).dot(n1);
         if (params.one_sided) {
@@ -377,41 +376,42 @@ double potential_edge(
         * H_alpha(phi0, params.alpha) * H_alpha(phi1, params.alpha);
 
     // distance to edge r_e already computed per edge
-    const double denom = std::pow(proj.r_e, params.p);
+    const double denom = std::pow(r_e, params.p);
     double I_e = (denom <= kEps) ? kSingularValue : (B_edge / denom);
 
     if (params.one_sided) {
         const Eigen::Vector3d edge_n = edge_normal_from_faces(face_points, has_f1);
         const bool outside = outside_edge(
             q,
-            proj.r_e, proj.P_e, edge_n,
+            r_e, P_e, edge_n,
             r_f0, phi_ef0, has_f1, r_f1, phi_ef1);
         if (!outside) {
             I_e = 0.0;
         }
     }
     if (params.localized) {
-        I_e *= h_epsilon(proj.r_e, params.epsilon);
+        I_e *= h_epsilon(r_e, params.epsilon);
     }
     return I_e;
 }
 
-std::tuple<double, double, int> vertex_face_term(
+void vertex_face_term(
     const Eigen::Vector3d& q, const Eigen::Vector3d& p_v,
-    const std::vector<Eigen::Vector3d>& neighbor_points, const bool is_boundary,
-    const double alpha, const bool one_sided)
+    const Eigen::Vector3d* neighbor_points, const int neighbor_count, const bool is_boundary,
+    const double alpha, const bool one_sided,
+    double& face_term, double& r_f_min_signed, int& face_min)
 {
     // get closest face sector and edge ray if any
-    double face_term = 0.0;
     // initialize to inf
-    double r_f_min_signed = 0.0;
     // local index of closest face
-    int face_min = -1;
+    face_term = 0.0;
+    r_f_min_signed = 0.0;
+    face_min = -1;
     double r_f_min = 1e30;
 
-    const int k = static_cast<int>(neighbor_points.size());
+    const int k = neighbor_count;
     if (k < 2) {
-        return std::make_tuple(0.0, 0.0, -1);
+        return;
     }
 
     const int limit = is_boundary ? k - 1 : k;
@@ -449,34 +449,38 @@ std::tuple<double, double, int> vertex_face_term(
         }
     }
 
-    return std::make_tuple(face_term, r_f_min_signed, face_min);
+    return;
 }
 
-std::tuple<double, double, int, Eigen::Vector3d, Eigen::Vector3d> vertex_edge_term(
+void vertex_edge_term(
     const Eigen::Vector3d& q, const Eigen::Vector3d& p_v,
-    const std::vector<Eigen::Vector3d>& neighbor_points, const bool is_boundary,
-    const double alpha, const bool one_sided)
+    const Eigen::Vector3d* neighbor_points, const int neighbor_count, const bool is_boundary,
+    const double alpha, const bool one_sided,
+    double& edge_term, double& r_e_min, int& edge_min,
+    Eigen::Vector3d& P_e_min, Eigen::Vector3d& edge_normal_min)
 {
     // This function does two things at once: computes the sum of edge directional factors for the vertex,
     // and along the way computes the closest edge distance and edge  r_e_min, edge_min,  and projection on closest edge
-    double edge_term = 0.0;
-    double r_e_min = 1e30;
-    int edge_min = -1;
-    Eigen::Vector3d P_e_min(0.0, 0.0, 0.0);
-    Eigen::Vector3d edge_normal_min(0.0, 0.0, 0.0);
+    edge_term = 0.0;
+    r_e_min = 1e30;
+    edge_min = -1;
+    P_e_min = Eigen::Vector3d(0.0, 0.0, 0.0);
+    edge_normal_min = Eigen::Vector3d(0.0, 0.0, 0.0);
 
-    const int k = static_cast<int>(neighbor_points.size());
+    const int k = neighbor_count;
     if (k == 0) {
-        return std::make_tuple(edge_term, r_e_min, edge_min, P_e_min, edge_normal_min);
+        return;
     }
 
     for (int i = 0; i < k; i++) {
-        const Eigen::Vector3d& p_i = neighbor_points[i];
-        const Eigen::Vector3d d_unit = unit_dir(p_v, p_i);
-        const EdgeProjection proj = edge_projection(q, p_v, d_unit);
+        const Eigen::Vector3d d_unit = unit_dir(p_v, neighbor_points[i]);
+        Eigen::Vector3d P_e;
+        double r_e;
+        Eigen::Vector3d unit_Pe_to_q;
+        edge_projection(q, p_v, d_unit, P_e, r_e, unit_Pe_to_q);
 
         //  Phi^{v,e} terms
-        const double phi_v = phi_ve(q, p_v, p_i, d_unit).first;
+        const double phi_v = phi_ve(q, p_v, neighbor_points[i], d_unit).first;
         double h_v = H_alpha(phi_v, alpha);
 
         const bool has_prev = (i > 0) || (!is_boundary);
@@ -488,14 +492,12 @@ std::tuple<double, double, int, Eigen::Vector3d, Eigen::Vector3d> vertex_edge_te
         std::array<int, 2> local_edges;
         int face_count = 0;
         if (has_prev) {
-            const Eigen::Vector3d& p_prev = neighbor_points[prev_idx];
-            face_points[face_count] = { p_i, p_v, p_prev };
+            face_points[face_count] = { neighbor_points[i], p_v, neighbor_points[prev_idx] };
             local_edges[face_count] = 0;
             face_count++;
         }
         if (has_next) {
-            const Eigen::Vector3d& p_next = neighbor_points[next_idx];
-            face_points[face_count] = { p_next, p_v, p_i };
+            face_points[face_count] = {neighbor_points[next_idx], p_v, neighbor_points[i] };
             local_edges[face_count] = 1;
             face_count++;
         }
@@ -507,12 +509,13 @@ std::tuple<double, double, int, Eigen::Vector3d, Eigen::Vector3d> vertex_edge_te
             Eigen::Vector3d(0.0, 0.0, 0.0),
             Eigen::Vector3d(0.0, 0.0, 0.0),
         };
+
         for (int j = 0; j < face_count; j++) {
             const auto& face = face_points[j];
             const Eigen::Vector3d n = face_normal(face[0], face[1], face[2]);
             const Eigen::Vector3d edge_inward =
                 face_edge_inward(n, face[0], face[1], face[2], local_edges[j]);
-            phi_ef[j] = proj.unit_Pe_to_q.dot(edge_inward);
+            phi_ef[j] = unit_Pe_to_q.dot(edge_inward);
             h_face[j] = H_alpha(phi_ef[j], alpha);
             r_f[j] = (q - face[0]).dot(n);
             if (one_sided) {
@@ -521,33 +524,19 @@ std::tuple<double, double, int, Eigen::Vector3d, Eigen::Vector3d> vertex_edge_te
             n_face[j] = n;
         }
 
-        const double phi_ef0 = phi_ef[0];
-        const double h_face_0 = h_face[0];
-        const double r_f0 = r_f[0];
-        double phi_ef1 = 0.0;
-        double h_face_1 = 0.0;
-        double r_f1 = 0.0;
-        bool has_f1 = false;
-        if (face_count > 1) {
-            phi_ef1 = phi_ef[1];
-            h_face_1 = h_face[1];
-            r_f1 = r_f[1];
-            has_f1 = true;
-        }
+        const bool has_f1 = face_count > 1;
 
-        Eigen::Vector3d n_sum = n_face[0];
-        if (has_f1) {
-            n_sum += n_face[1];
-        }
+        Eigen::Vector3d n_avg = n_face[0];
+        if (has_f1) n_avg += n_face[1];
         if (one_sided) {
-            const double n_norm = n_sum.norm();
+            const double n_norm = n_avg.norm();
             if (n_norm > kEps) {
-                n_sum /= n_norm;
+                n_avg = n_avg / n_norm;
             }
+
             const bool outside = outside_edge(
-                q,
-                proj.r_e, proj.P_e, n_sum,
-                r_f0, phi_ef0, has_f1, r_f1, phi_ef1);
+                q, r_e, P_e, n_avg,
+                r_f[0], phi_ef[0], has_f1, r_f[1], phi_ef[1]);
             if (!outside) {
                 h_v = 0.0;
             }
@@ -556,26 +545,24 @@ std::tuple<double, double, int, Eigen::Vector3d, Eigen::Vector3d> vertex_edge_te
         // complete part of the edge directional factor to be used for the vertex
         // it is different from the complete factor as it only uses h_v = H^alpha(Phi^{v,e})
         // for this vertex, not both
-        edge_term += (1.0 - h_face_0 - h_face_1) * h_v;
+        edge_term += (1.0 - h_face[0] - h_face[1]) * h_v;
 
         // is the projection of q to the ray starting at vertex along the edge inside the ray
-        if (phi_v > 0.0 && proj.r_e < r_e_min) {
+        if (phi_v > 0.0 && r_e < r_e_min) {
             // replace the distance if projection is inside and the distance is less
-            r_e_min = proj.r_e;
+            r_e_min = r_e;
             edge_min = i;
-            P_e_min = proj.P_e;
-            if (one_sided) {
-                edge_normal_min = n_sum;
-            }
+            P_e_min = P_e;
+            if (one_sided) edge_normal_min = n_avg;
         }
     }
 
-    return std::make_tuple(edge_term, r_e_min, edge_min, P_e_min, edge_normal_min);
+    return;
 }
 
 double potential_vertex(
     const Eigen::Vector3d& q, const Eigen::Vector3d& p_v,
-    const std::vector<Eigen::Vector3d>& neighbor_points, const bool is_boundary,
+    const Eigen::Vector3d* neighbor_points, const int neighbor_count, const bool is_boundary,
     const bool pointed_vertex,
     const PotentialParameters& params)
 {
@@ -584,20 +571,22 @@ double potential_vertex(
 
     // denominator of the potential has a sum over directional terms over faces and edges computed here
     // these are also needed to determine local sidedeness
-    const auto face_info = vertex_face_term(
-        q, p_v, neighbor_points, is_boundary,
-        params.alpha, params.one_sided);
-    const auto edge_info = vertex_edge_term(
-        q, p_v, neighbor_points, is_boundary,
-        params.alpha, params.one_sided);
-    const double face_term = std::get<0>(face_info);
-    const double r_f_min_signed = std::get<1>(face_info);
-    const int face_min = std::get<2>(face_info);
-    const double edge_term = std::get<0>(edge_info);
-    const double r_e_min = std::get<1>(edge_info);
-    const int edge_min = std::get<2>(edge_info);
-    const Eigen::Vector3d P_e_min = std::get<3>(edge_info);
-    const Eigen::Vector3d edge_normal_min = std::get<4>(edge_info);
+    double face_term;
+    double r_f_min_signed;
+    int face_min;
+    double edge_term;
+    double r_e_min;
+    int edge_min;
+    Eigen::Vector3d P_e_min;
+    Eigen::Vector3d edge_normal_min;
+    vertex_face_term(
+        q, p_v, neighbor_points, neighbor_count, is_boundary,
+        params.alpha, params.one_sided,
+        face_term, r_f_min_signed, face_min);
+    vertex_edge_term(
+        q, p_v, neighbor_points, neighbor_count, is_boundary,
+        params.alpha, params.one_sided,
+        edge_term, r_e_min, edge_min, P_e_min, edge_normal_min);
 
     if (params.one_sided) {
         if (!outside_vertex(
@@ -633,6 +622,8 @@ void get_vertices_and_edges(
 
     edge_list.clear();
     vertex_list.clear();
+    edge_list.reserve(mesh.num_edges());
+    vertex_list.reserve(mesh.num_vertices());
 
     for (const int fidx : face_indices) {
         for (int i = 0; i < 3; i++) {
@@ -660,15 +651,12 @@ void get_vertices_and_edges(
     }
 }
 
-// ****************************************************************************
-// Main potential calls
-
-double smoothed_offset_potential_point(
+double smoothed_offset_potential_point_impl(
     const Eigen::Vector3d& q, const std::vector<int>& face_indices,
+    const std::vector<int>& edge_list, const std::vector<int>& vertex_list,
     const PotentialCollisionMesh& mesh,
-    const double alpha, const double p, const double epsilon,
-    const bool include_faces, const bool include_edges, const bool include_vertices,
-    const bool localized, const bool one_sided)
+    const PotentialParameters& params,
+    const bool include_faces, const bool include_edges, const bool include_vertices)
 {
     // Compute potential from faces,edges and vertices given by the face list face_indices at point q.
     // See smoothed_offset_potential for arguments.
@@ -679,20 +667,6 @@ double smoothed_offset_potential_point(
     double face_sum = 0.0;
     double edge_sum = 0.0;
     double vertex_sum = 0.0;
-
-    const PotentialParameters params{
-        alpha,
-        p,
-        epsilon,
-        localized,
-        one_sided,
-    };
-
-    std::vector<int> edge_list;
-    std::vector<int> vertex_list;
-    get_vertices_and_edges(
-        face_indices, mesh,
-        edge_list, vertex_list);
 
     for (const int fidx : face_indices) {
         if (include_faces) {
@@ -712,12 +686,6 @@ double smoothed_offset_potential_point(
 
     if (include_edges) {
         for (const int edge_idx : edge_list) {
-            const int a = mesh.edges()(edge_idx, 0);
-            const int b = mesh.edges()(edge_idx, 1);
-            const EdgePoints edge_points = {
-                vertex_position(mesh, a),
-                vertex_position(mesh, b),
-            };
             int f0 = mesh.edges_to_faces()(edge_idx, 0);
             int f1 = mesh.edges_to_faces()(edge_idx, 1);
             if (f0 < 0 && f1 >= 0) {
@@ -740,8 +708,7 @@ double smoothed_offset_potential_point(
                 };
             }
             edge_sum += potential_edge(
-                q, edge_points,
-                face_points,
+                q, face_points,
                 local0, local1, has_f1,
                 params);
         }
@@ -751,14 +718,18 @@ double smoothed_offset_potential_point(
         for (const int v_idx : vertex_list) {
             const Eigen::Vector3d p_v = vertex_position(mesh, v_idx);
             const auto& edge_list_v = mesh.vertices_to_edges()[static_cast<size_t>(v_idx)];
-            std::vector<Eigen::Vector3d> neighbor_points;
-            neighbor_points.reserve(edge_list_v.size());
+            if (edge_list_v.size() > 50) {
+                throw std::runtime_error("Vertex has more than 50 incident edges.");
+            }
+            std::array<Eigen::Vector3d, 50> neighbor_points;
+            int neighbor_count = 0;
             int boundary_count = 0;
             for (const int edge_idx : edge_list_v) {
                 const int a = mesh.edges()(edge_idx, 0);
                 const int b = mesh.edges()(edge_idx, 1);
                 const int neighbor_idx = (a == v_idx) ? b : a;
-                neighbor_points.push_back(vertex_position(mesh, neighbor_idx));
+                neighbor_points[neighbor_count] = vertex_position(mesh, neighbor_idx);
+                neighbor_count++;
                 if (mesh.edges_to_faces()(edge_idx, 0) < 0
                     || mesh.edges_to_faces()(edge_idx, 1) < 0) {
                     boundary_count++;
@@ -768,13 +739,44 @@ double smoothed_offset_potential_point(
             const bool pointed_vertex = mesh.pointed_vertices()[static_cast<size_t>(v_idx)] != 0;
             vertex_sum += potential_vertex(
                 q, p_v,
-                neighbor_points, is_boundary,
+                neighbor_points.data(), neighbor_count, is_boundary,
                 pointed_vertex,
                 params);
         }
     }
 
     return face_sum + edge_sum + vertex_sum;
+}
+
+// ****************************************************************************
+// Main potential calls
+
+double smoothed_offset_potential_point(
+    const Eigen::Vector3d& q, const std::vector<int>& face_indices,
+    const PotentialCollisionMesh& mesh,
+    const double alpha, const double p, const double epsilon,
+    const bool include_faces, const bool include_edges, const bool include_vertices,
+    const bool localized, const bool one_sided)
+{
+    const PotentialParameters params{
+        alpha,
+        p,
+        epsilon,
+        localized,
+        one_sided,
+    };
+
+    std::vector<int> edge_list;
+    std::vector<int> vertex_list;
+    get_vertices_and_edges(
+        face_indices, mesh,
+        edge_list, vertex_list);
+    return smoothed_offset_potential_point_impl(
+        q, face_indices,
+        edge_list, vertex_list,
+        mesh,
+        params,
+        include_faces, include_edges, include_vertices);
 }
 
 } // namespace
@@ -794,16 +796,28 @@ Eigen::VectorXd smoothed_offset_potential(
     for (int i = 0; i < mesh.faces().rows(); i++) {
         face_indices[static_cast<size_t>(i)] = i;
     }
+    std::vector<int> edge_list;
+    std::vector<int> vertex_list;
+    get_vertices_and_edges(
+        face_indices, mesh,
+        edge_list, vertex_list);
+    const PotentialParameters params{
+        alpha,
+        p,
+        epsilon,
+        localized,
+        one_sided,
+    };
 
     Eigen::VectorXd out(q.rows());
     for (int i = 0; i < q.rows(); i++) {
-        const Eigen::Vector3d qi = q.row(i);
-        out[i] = smoothed_offset_potential_point(
+        const Eigen::Vector3d qi = q.row(i).transpose();
+        out[i] = smoothed_offset_potential_point_impl(
             qi, face_indices,
+            edge_list, vertex_list,
             mesh,
-            alpha, p, epsilon,
-            include_faces, include_edges, include_vertices,
-            localized, one_sided);
+            params,
+            include_faces, include_edges, include_vertices);
     }
 
     return out;

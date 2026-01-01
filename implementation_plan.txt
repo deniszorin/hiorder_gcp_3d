@@ -195,8 +195,22 @@ Step 2: Auto-diff (TinyAD)
 1) Templetize the C++ potential code on scalar type `F`:
    - Keep constants (alpha, p, epsilon, eps, singular_value) and constants in the code like 1.0/2.0 as double.
    - templetize functions potential_face, potential_edge, potential_vertex, and all functions they call except outside_face, outside_edge and outside_vertex.  
+more specifically: 
+ potential_face  templetize  q, face_points
+ potential_edge:
+    q, face_points
+    const int local0, const int local1, const bool has_f1,
+vertex_face_term:
+     q, p_v, neighbor_points
+ vertex_edge_term:
+     q, p_v, neighbor_points
+ potential_vertex  q, p_v, neighbor_points
+  (BUT NOT pointed_vertex)
+
+
+
 2) Instantiate and test for `F=double` (must match Step 1 results).
 3) Instantiate and test for TinyAD autodiff scalar type:
    - Ensure potential evaluation values match numba (derivatives can be checked later).
-4) Test first derivatives using finite differences, for each of 
+4) Test first derivatives using finite differences, for each of  the functions  potential_face, potential_edge, potential_vertex,
 4) Keep the Python verification tests passing unchanged.

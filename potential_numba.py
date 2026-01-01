@@ -422,7 +422,7 @@ def potential_face(
 
 @njit(cache=True)
 def potential_edge(
-    q: ArrayF, edge_points: ArrayF, face_points: ArrayF,
+    q: ArrayF, face_points: ArrayF,
     local0: int, local1: int, has_f1: bool,
     params: PotentialParameters,
 ) -> float:
@@ -431,13 +431,13 @@ def potential_edge(
     Parameters are the same as for the top-level potential function
     returns the value of the potential
     """
-    p0, p1 = edge_points
-    d_unit = unit_dir(p0, p1)
-    P_e, r_e, unit_Pe_to_q = edge_projection(q, p0, d_unit)
-    phi0, phi1 = phi_ve(q, p0, p1, d_unit)
+    f0_p0, f0_p1, f0_p2 = face_points[0]
+    edge_p0, edge_p1 = face_edge_endpoints(f0_p0, f0_p1, f0_p2, local0)
+    d_unit = unit_dir(edge_p0, edge_p1)
+    P_e, r_e, unit_Pe_to_q = edge_projection(q, edge_p0, d_unit)
+    phi0, phi1 = phi_ve(q, edge_p0, edge_p1, d_unit)
 
     phi_ef0 = r_f0 = h_face_0 = 0.0
-    f0_p0, f0_p1, f0_p2 = face_points[0]
     n0 = face_normal(f0_p0, f0_p1, f0_p2)
     edge_inward_0 = face_edge_inward(n0, f0_p0, f0_p1, f0_p2, local0)
     phi_ef0 = dot3(unit_Pe_to_q, edge_inward_0)
@@ -787,7 +787,6 @@ def smoothed_offset_potential_point(
     if include_edges:
         for i in range(edge_list.size):
             edge_idx = edge_list[i]
-            edge_points = conn.V[conn.edges[edge_idx, :]]
             f0, f1 = conn.edge_faces[edge_idx]
             if f0 < 0 and f1 >= 0:
                 f0, f1 = f1, -1
@@ -800,7 +799,7 @@ def smoothed_offset_potential_point(
                 local1 = find_local_edge(conn, f1, edge_idx)
                 face_points[1] = conn.V[conn.faces[f1, :]]
             edge_sum += potential_edge(
-                q, edge_points, face_points,
+                q, face_points,
                 local0, local1, has_f1,
                 params,
             )
