@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import List
 
 import numpy as np
@@ -116,7 +117,26 @@ def build_connectivity(mesh: MeshData) -> tuple[
                 if eidx not in vertices_to_edges[v]:
                     vertices_to_edges[v].append(eidx)
 
-    return edges, vertices_to_faces, edges_to_faces, vertices_to_edges
+    mesh_stub = SimpleNamespace(faces=mesh.faces, vertices_to_faces=vertices_to_faces)
+    boundary_edge = [len(face_list) == 1 for face_list in edges_to_faces]
+    ordered_vertices_to_edges: List[List[int]] = [[] for _ in range(nv)]
+    for v in range(nv):
+        neighbors = _ordered_vertex_neighbors(mesh_stub, v)
+        if neighbors is None:
+            raise ValueError(f"Failed to order vertex neighbors at vertex {v}.")
+        ordered_edges: List[int] = []
+        for neighbor in neighbors:
+            key = (v, neighbor) if v < neighbor else (neighbor, v)
+            ordered_edges.append(edge_index[key])
+
+        boundary_positions = [i for i, eidx in enumerate(ordered_edges) if boundary_edge[eidx]]
+        if len(boundary_positions) == 2:
+            if boundary_positions[0] != 0 or boundary_positions[1] != len(ordered_edges) - 1:
+                raise ValueError(f"Boundary edge order mismatch at vertex {v}.")
+
+        ordered_vertices_to_edges[v] = ordered_edges
+
+    return edges, vertices_to_faces, edges_to_faces, ordered_vertices_to_edges
 
 
 def _order_vectors_ccw(

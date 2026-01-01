@@ -82,6 +82,7 @@ public:
     {
         return m_vertices_to_edges;
     }
+    std::vector<std::vector<int>>& vertices_to_edges() { return m_vertices_to_edges; }
 
     /// @brief Get the mapping from vertices to faces of the collision mesh.
     const std::vector<std::vector<int>>& vertices_to_faces() const

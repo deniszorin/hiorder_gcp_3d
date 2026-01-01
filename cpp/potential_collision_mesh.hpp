@@ -26,6 +26,7 @@ private:
     void compute_face_geometry();
     void compute_edge_normals();
     void compute_pointed_vertices();
+    void reorder_vertices_to_edges();
 
     Eigen::MatrixXd m_normals;
     std::vector<std::array<Eigen::Vector3d, 3>> m_edge_inward;

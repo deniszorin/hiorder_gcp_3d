@@ -2,6 +2,7 @@
 
 #include "cone_convex_hull.hpp"
 
+#include <algorithm>
 #include <optional>
 #include <stdexcept>
 #include <unordered_map>
@@ -12,6 +13,13 @@ namespace ipc {
 namespace {
 
 constexpr double kEps = 1e-12;
+
+struct PairHash {
+    size_t operator()(const std::pair<int, int>& key) const
+    {
+        return std::hash<int>()(key.first) ^ (std::hash<int>()(key.second) << 1);
+    }
+};
 
 std::optional<std::vector<int>> ordered_vertex_neighbors(
     const PotentialCollisionMesh& mesh,
@@ -110,6 +118,7 @@ PotentialCollisionMesh::PotentialCollisionMesh(
     Eigen::ConstRef<Eigen::MatrixXi> faces)
     : CollisionMesh(rest_positions, faces)
 {
+    reorder_vertices_to_edges();
     compute_face_geometry();
     compute_edge_normals();
     compute_pointed_vertices();
@@ -205,6 +214,69 @@ void PotentialCollisionMesh::compute_pointed_vertices()
         if (pointed_vertex(vectors)) {
             m_pointed_vertices[static_cast<size_t>(v)] = 1;
         }
+    }
+}
+
+void PotentialCollisionMesh::reorder_vertices_to_edges()
+{
+    const Eigen::MatrixXi& edges = this->edges();
+    const Eigen::MatrixXi& edge_faces = edges_to_faces();
+
+    std::unordered_map<std::pair<int, int>, int, PairHash> edge_index;
+    edge_index.reserve(static_cast<size_t>(edges.rows()));
+    for (int e = 0; e < edges.rows(); e++) {
+        const int a = edges(e, 0);
+        const int b = edges(e, 1);
+        const int lo = std::min(a, b);
+        const int hi = std::max(a, b);
+        edge_index[std::make_pair(lo, hi)] = e;
+    }
+
+    std::vector<bool> boundary_edge(static_cast<size_t>(edges.rows()), false);
+    for (int e = 0; e < edges.rows(); e++) {
+        boundary_edge[static_cast<size_t>(e)] =
+            edge_faces(e, 0) < 0 || edge_faces(e, 1) < 0;
+    }
+
+    auto& vertices_to_edges = this->vertices_to_edges();
+    for (int v = 0; v < static_cast<int>(num_vertices()); v++) {
+        std::optional<std::vector<int>> neighbors = ordered_vertex_neighbors(*this, v);
+        if (!neighbors.has_value()) {
+            throw std::runtime_error(
+                "Failed to order vertex neighbors at vertex "
+                + std::to_string(v) + ".");
+        }
+        std::vector<int> ordered_edges;
+        ordered_edges.reserve(neighbors->size());
+        for (const int neighbor : neighbors.value()) {
+            const int lo = std::min(v, neighbor);
+            const int hi = std::max(v, neighbor);
+            auto it = edge_index.find(std::make_pair(lo, hi));
+            if (it == edge_index.end()) {
+                throw std::runtime_error("Missing edge for ordered vertex neighbor.");
+            }
+            ordered_edges.push_back(it->second);
+        }
+
+        std::vector<int> boundary_positions;
+        boundary_positions.reserve(2);
+        for (int i = 0; i < static_cast<int>(ordered_edges.size()); i++) {
+            const int edge_idx = ordered_edges[i];
+            if (boundary_edge[static_cast<size_t>(edge_idx)]) {
+                boundary_positions.push_back(i);
+            }
+        }
+        if (boundary_positions.size() == 2) {
+            const bool ok = boundary_positions.front() == 0
+                && boundary_positions.back() == static_cast<int>(ordered_edges.size()) - 1;
+            if (!ok) {
+                throw std::runtime_error(
+                    "Boundary edge order mismatch at vertex "
+                    + std::to_string(v) + ".");
+            }
+        }
+
+        vertices_to_edges[static_cast<size_t>(v)] = ordered_edges;
     }
 }
 
