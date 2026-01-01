@@ -29,17 +29,17 @@ class NumbaConnectivity(NamedTuple):
     vertex_edge_indices: ArrayI
 
 
-class NumbaGeometry(NamedTuple):
-    """Numba-friendly geometry arrays."""
-
-    normals: ArrayF  # nf x 3 
-    edge_inward: ArrayF  # nf x 3 x 3 inward pointing unit vectors for each edge 
-    edge_normals: ArrayF  # ne x 3  average of face normals per edge
-    pointed_vertices: ArrayF  # nv boolean pointed vertex flags
+class PotentialParameters(NamedTuple):
+    alpha: float
+    p: float
+    epsilon: float
+    localized: bool
+    one_sided: bool
 
 
 # ****************************************************************************
 # Basic geometry functions for numba to avoid function calls
+# spelling out componentwise to avoide the same
 
 @njit(cache=True)
 def dot3(a: ArrayF, b: ArrayF) -> float:
@@ -70,29 +70,71 @@ def unit_vec(v: ArrayF) -> ArrayF:
 
 
 @njit(cache=True)
-def project_point_to_line(q: ArrayF, p0: ArrayF, p1: ArrayF) -> tuple[ArrayF, float, ArrayF]:
-    d = p1 - p0
-    d_norm = safe_norm(d)
-    d_unit = d / d_norm
+def unit_dir(p0: ArrayF, p1: ArrayF) -> ArrayF:
+    return unit_vec(p1 - p0)
+
+
+@njit(cache=True)
+def cross3(a: ArrayF, b: ArrayF) -> ArrayF:
+    out = np.empty(3, dtype=np.float64)
+    out[0] = a[1] * b[2] - a[2] * b[1]
+    out[1] = a[2] * b[0] - a[0] * b[2]
+    out[2] = a[0] * b[1] - a[1] * b[0]
+    return out
+
+
+@njit(cache=True)
+def face_normal(p0: ArrayF, p1: ArrayF, p2: ArrayF) -> ArrayF:
+    n = cross3(p1 - p0, p2 - p0)
+    return n / safe_norm(n)
+
+
+@njit(cache=True)
+def face_edge_endpoints( p0: ArrayF, p1: ArrayF, p2: ArrayF,local_edge: int,
+) -> tuple[ArrayF, ArrayF]:
+    """
+    Given  face vertices (p0,p1,p2) and local_edge index 0..2, return endpoints
+    """
+    if local_edge == 0:
+        return p0, p1
+    if local_edge == 1:
+        return p1, p2
+    return p2, p0
+
+
+@njit(cache=True)
+def face_edge_inward(
+    n: ArrayF,
+    p0: ArrayF, p1: ArrayF, p2: ArrayF,
+    local_edge: int,
+) -> ArrayF:
+    """
+    Given a face and local edge index 0..2, return a vector perp to the edge pointing inside.
+    """
+    edge_p0, edge_p1 = face_edge_endpoints(p0, p1, p2, local_edge)
+    d_e = unit_vec(edge_p1 - edge_p0)
+    return cross3(n, d_e)
+
+
+
+@njit(cache=True)
+def edge_projection(
+    q: ArrayF, p0: ArrayF, d_unit: ArrayF
+) -> tuple[ArrayF, float, ArrayF]:
+    """
+    q: point, (p0, d_unit): edge anchor and unit direction
+    returns: q's projection position P_e on the edge line, distance r_e, unit vector from P_e to q
+    """
     # the choice of the direction on the edge does not affect
     # projected position P_e can use any
     t = dot3(q - p0, d_unit)
     P_e = p0 + t * d_unit
     diff = q - P_e
     r_e = norm3(diff)
-    return P_e, r_e, d_unit
-
-
-@njit(cache=True)
-def edge_projection(
-    q: ArrayF, p0: ArrayF, p1: ArrayF
-) -> tuple[ArrayF, float, ArrayF, ArrayF]:
-    P_e, r_e, d_unit = project_point_to_line(q, p0, p1)
     # P_e: projection of q to each edge line.
     # r_e: distance from q to each edge line.
-    diff = q - P_e
-    unit_edge = diff / safe_norm(diff)
-    return P_e, r_e, d_unit, unit_edge
+    unit_Pe_to_q = diff / safe_norm(diff)
+    return P_e, r_e, unit_Pe_to_q
 
 # ****************************************************************************
 # Potential blending/localization functions
@@ -126,9 +168,7 @@ def h_epsilon_scalar(z: float, epsilon: float) -> float:
 
 @njit(cache=True)
 def face_edge_vertices(conn: NumbaConnectivity, fidx: int, local_edge: int) -> tuple[int, int]:
-    v0 = conn.faces[fidx, 0]
-    v1 = conn.faces[fidx, 1]
-    v2 = conn.faces[fidx, 2]
+    v0, v1, v2 = conn.faces[fidx]
     if local_edge == 0:
         return v0, v1
     if local_edge == 1:
@@ -208,41 +248,29 @@ def _build_numba_connectivity(mesh) -> NumbaConnectivity:
     )
 
 
-def _build_numba_geometry(geom) -> NumbaGeometry:
-    return NumbaGeometry(
-        normals=np.asarray(geom.normals, dtype=np.float64),
-        edge_inward=np.asarray(geom.edge_inward, dtype=np.float64),
-        edge_normals=np.asarray(geom.edge_normals, dtype=np.float64),
-        pointed_vertices=np.asarray(geom.pointed_vertices, dtype=np.bool_),
-    )
-
-
 # ****************************************************************************
 #  Potential directional terms Phi^{e,f}, Phi^{v,e} 
 
 @njit(cache=True)
 def phi_ef(
     q: ArrayF,
-    conn: NumbaConnectivity,
-    geom: NumbaGeometry,
-    fidx: int,
+    n: ArrayF, p0: ArrayF, p1: ArrayF, p2: ArrayF,
     local_edge: int,
 ) -> float:
-    a, b = face_edge_vertices(conn, fidx, local_edge)
-    p0 = conn.V[a]
-    p1 = conn.V[b]
-    _P_e, _r_e, _d_unit, unit_edge = edge_projection(q, p0, p1)
+    edge_p0, edge_p1 = face_edge_endpoints(p0, p1, p2, local_edge)
+    d_unit = unit_dir(edge_p0, edge_p1)
+    _P_e, _r_e, unit_Pe_to_q = edge_projection(q, edge_p0, d_unit)
     # Phi^{e,f} := (q - P_e)_+ dot (n x d_e[i]) per face
-    return dot3(unit_edge, geom.edge_inward[fidx, local_edge])
+    edge_inward = face_edge_inward(n, p0, p1, p2, local_edge)
+    return dot3(unit_Pe_to_q, edge_inward)
 
 
 @njit(cache=True)
 def phi_ve(q: ArrayF, p0: ArrayF, p1: ArrayF, d_unit: ArrayF) -> tuple[float, float]:
-    # Phi^{0,e} and Phi^{1,-e} for each edge, used by edge/vertex terms.
-    vec0 = q - p0
-    vec1 = q - p1
-    unit0 = unit_vec(vec0)
-    unit1 = unit_vec(vec1)
+    """Phi^{0,e} and Phi^{1,-e} for each edge, used by edge/vertex terms.
+    """
+    unit0 = unit_dir(p0, q)
+    unit1 = unit_dir(p1, q)
     # Phi^{i,e}, i=0,1 factors per edge
     phi0 = dot3(unit0, d_unit)
     phi1 = dot3(unit1, -d_unit)
@@ -257,6 +285,22 @@ def outside_face_scalar(r_f: float) -> bool:
     Assumes that signed distance to the face is given (computed elsewhere) and returns if it is positive
     """
     return r_f > 0.0
+
+
+@njit(cache=True)
+def edge_normal_from_faces(conn: NumbaConnectivity, edge_idx: int) -> ArrayF:
+    n_sum = np.zeros(3, dtype=np.float64)
+    f0, f1 = conn.edge_faces[edge_idx]
+    if f0 >= 0:
+        p0, p1, p2 = conn.V[conn.faces[f0, :]]
+        n_sum += face_normal(p0, p1, p2)
+    if f1 >= 0:
+        p0, p1, p2 = conn.V[conn.faces[f1, :]]
+        n_sum += face_normal(p0, p1, p2)
+    n_norm = norm3(n_sum)
+    if n_norm > eps:
+        n_sum = n_sum / n_norm
+    return n_sum
 
 
 @njit(cache=True)
@@ -306,11 +350,15 @@ def outside_edge_scalar(
 
 @njit(cache=True)
 def outside_vertex_scalar(
-    q: ArrayF, v_idx: int,
-    conn: NumbaConnectivity, geom: NumbaGeometry,
+    q: ArrayF,
     r_v: float,
-    r_f_min_signed: float, face_min: int,
-    r_e_min: float, edge_min: int, P_e_min: ArrayF,
+    r_f_min_signed: float,
+    face_min: int,
+    r_e_min: float,
+    edge_min: int,
+    P_e_min: ArrayF,
+    edge_normal_min: ArrayF,
+    pointed_vertex: bool,
 ) -> bool:
     """
     Assumes distance to the vertex, 
@@ -334,13 +382,13 @@ def outside_vertex_scalar(
     if use_face:
         return r_f_min_signed > 0.0
     if use_edge:
-        return dot3(q - P_e_min, geom.edge_normals[edge_min]) > 0.0
-    # if any points left unassigned after a pass over all edges, use
+        return dot3(q - P_e_min, edge_normal_min) > 0.0
+    # if any points left unassigned after a pass over all edges and faces, use
     # the pointed-vertex flag for those vertex-closest queries.
     # the reason for this is that if the vertex is closest, this means q 
     # is in the polar cone and the pointed-vertex flag indicates if this 
     # cones is inside or outside (the whole cone has to be on one side)
-    return geom.pointed_vertices[v_idx]
+    return pointed_vertex
 
 # ****************************************************************************
 # Potential evaluation, face, edge, vertex components
@@ -348,112 +396,106 @@ def outside_vertex_scalar(
 @njit(cache=True)
 def potential_face(
     q: ArrayF, fidx: int,
-    conn: NumbaConnectivity, geom: NumbaGeometry,
-    alpha: float, p: float, epsilon: float,
-    localized: bool, one_sided: bool,
+    conn: NumbaConnectivity,
+    params: PotentialParameters,
 ) -> float:
     """
     Evaluate the potential from face fidx, at point q
-    Parameters are the same as for the top-pevel potential function
+    Parameters are the same as for the top-level potential function
     returns the value of the potential
     """
-    v0 = conn.faces[fidx, 0]
-    p0 = conn.V[v0]
-    n = geom.normals[fidx]
+    p0, p1, p2 = conn.V[conn.faces[fidx, :]]
+    n = face_normal(p0, p1, p2)
     # signed distance to the face plane.
     r_f = dot3(q - p0, n)
-    r_f_abs = abs(r_f)
 
     B = 1.0
     for local_edge in range(3):
-        phi_ef_val = phi_ef(q, conn, geom, fidx, local_edge)
-        B *= H_alpha_scalar(phi_ef_val, alpha)
+        phi_ef_val = phi_ef(q, n, p0, p1, p2, local_edge)
+        B *= H_alpha_scalar(phi_ef_val, params.alpha)
 
-    denom = r_f_abs ** p
+    denom = abs(r_f) ** params.p
     if denom <= eps:
         I_f = singular_value
     else:
         I_f = B / denom
 
-    if one_sided and not outside_face_scalar(r_f):
+    if params.one_sided and not outside_face_scalar(r_f):
         I_f = 0.0
-    if localized:
-        I_f *= h_epsilon_scalar(r_f_abs, epsilon)
+    if params.localized:
+        I_f *= h_epsilon_scalar(abs(r_f), params.epsilon)
     return I_f
 
 
 @njit(cache=True)
 def potential_edge(
     q: ArrayF, edge_idx: int,
-    conn: NumbaConnectivity, geom: NumbaGeometry,
-    alpha: float, p: float, epsilon: float,
-    localized: bool, one_sided: bool,
+    conn: NumbaConnectivity,
+    params: PotentialParameters,
 ) -> float:
     """
-    Evaluate the potential from face fidx, at point q
-    Parameters are the same as for the top-pevel potential function
+    Evaluate the potential from edge edge_idx, at point q
+    Parameters are the same as for the top-level potential function
     returns the value of the potential
     """
-    a = conn.edges[edge_idx, 0]
-    b = conn.edges[edge_idx, 1]
-    p0 = conn.V[a]
-    p1 = conn.V[b]
-    P_e, r_e, d_unit, unit_edge = edge_projection(q, p0, p1)
+    p0, p1 = (conn.V[conn.edges[edge_idx, 0]], conn.V[conn.edges[edge_idx, 1]])
+    d_unit = unit_dir(p0, p1)
+    P_e, r_e, unit_Pe_to_q = edge_projection(q, p0, d_unit)
     phi0, phi1 = phi_ve(q, p0, p1, d_unit)
 
-    f0 = conn.edge_faces[edge_idx, 0]
-    f1 = conn.edge_faces[edge_idx, 1]
+    f0, f1 = conn.edge_faces[edge_idx]
     has_f1 = f1 >= 0
 
-    phi_ef0 = 0.0
-    r_f0 = 0.0
-    h_face_0 = 0.0
+    phi_ef0 = r_f0 = h_face_0 = 0.0
     if f0 >= 0:
         local0 = find_local_edge(conn, f0, edge_idx)
-        phi_ef0 = dot3(unit_edge, geom.edge_inward[f0, local0])
-        h_face_0 = H_alpha_scalar(phi_ef0, alpha)
-        v0 = conn.faces[f0, 0]
-        r_f0 = dot3(q - conn.V[v0], geom.normals[f0])
-        if one_sided:
+        f0_p0, f0_p1, f0_p2 = conn.V[conn.faces[f0, :]]
+        n0 = face_normal(f0_p0, f0_p1, f0_p2)
+        edge_inward_0 = face_edge_inward(n0, f0_p0, f0_p1, f0_p2, local0)
+        phi_ef0 = dot3(unit_Pe_to_q, edge_inward_0)
+        h_face_0 = H_alpha_scalar(phi_ef0, params.alpha)
+        r_f0 = dot3(q - f0_p0, n0)
+        if params.one_sided:
             h_face_0 *= outside_face_scalar(r_f0)
 
-    phi_ef1 = 0.0
-    r_f1 = 0.0
-    h_face_1 = 0.0
+    phi_ef1 = r_f1 = h_face_1 = 0.0
     if has_f1:
         local1 = find_local_edge(conn, f1, edge_idx)
-        phi_ef1 = dot3(unit_edge, geom.edge_inward[f1, local1])
-        h_face_1 = H_alpha_scalar(phi_ef1, alpha)
-        v1 = conn.faces[f1, 0]
-        r_f1 = dot3(q - conn.V[v1], geom.normals[f1])
-        if one_sided:
+        f1_p0, f1_p1, f1_p2 = conn.V[conn.faces[f1, :]]
+        n1 = face_normal(f1_p0, f1_p1, f1_p2)
+        edge_inward_1 = face_edge_inward(n1, f1_p0, f1_p1, f1_p2, local1)
+        phi_ef1 = dot3(unit_Pe_to_q, edge_inward_1)
+        h_face_1 = H_alpha_scalar(phi_ef1, params.alpha)
+        r_f1 = dot3(q - f1_p0, n1)
+        if params.one_sided:
             h_face_1 *= outside_face_scalar(r_f1)
 
-    B_edge = (1.0 - h_face_0 - h_face_1) * H_alpha_scalar(phi0, alpha) * H_alpha_scalar(phi1, alpha)
+    B_edge = (1.0 - h_face_0 - h_face_1) * H_alpha_scalar(phi0, params.alpha) * H_alpha_scalar(phi1, params.alpha)
 
     # distance to edge r_e already computed per edge
-    denom = r_e ** p
+    denom = r_e ** params.p
     if denom <= eps:
         I_e = singular_value
     else:
         I_e = B_edge / denom
 
-    if one_sided:
+    if params.one_sided:
+        edge_n = edge_normal_from_faces(conn, edge_idx)
         if not outside_edge_scalar(
             q,
-            r_e, P_e, geom.edge_normals[edge_idx],
+            r_e, P_e, edge_n,
             r_f0, phi_ef0, has_f1, r_f1, phi_ef1,
         ):
             I_e = 0.0
-    if localized:
-        I_e *= h_epsilon_scalar(r_e, epsilon)
+    if params.localized:
+        I_e *= h_epsilon_scalar(r_e, params.epsilon)
     return I_e
 
 
 @njit(cache=True)
 def vertex_face_term(
     q: ArrayF, v_idx: int,
-    conn: NumbaConnectivity, geom: NumbaGeometry,
+    conn: NumbaConnectivity,
     alpha: float, one_sided: bool,
 ) -> tuple[float, float, int]:
     """
@@ -475,9 +517,9 @@ def vertex_face_term(
     end_f = conn.vertex_face_offsets[v_idx + 1]
     for idx in range(start_f, end_f):
         f = conn.vertex_face_indices[idx]
-        v0 = conn.faces[f, 0]
-        v1 = conn.faces[f, 1]
-        v2 = conn.faces[f, 2]
+        v0, v1, v2 = conn.faces[f]
+        p0, p1, p2 = conn.V[conn.faces[f, :]]
+        n = face_normal(p0, p1, p2)
         # figure out which edges are incident at the vertex
         if v_idx == v0:
             e0 = 0
@@ -492,13 +534,12 @@ def vertex_face_term(
             continue
 
         # face directional factor affecting the vertex (incident edges only)
-        phi0 = phi_ef(q, conn, geom, f, e0)
-        phi1 = phi_ef(q, conn, geom, f, e1)
+        phi0 = phi_ef(q, n, p0, p1, p2, e0)
+        phi1 = phi_ef(q, n, p0, p1, p2, e1)
         h0 = H_alpha_scalar(phi0, alpha)
         h1 = H_alpha_scalar(phi1, alpha)
 
-        v_face = conn.faces[f, 0]
-        r_f = dot3(q - conn.V[v_face], geom.normals[f])
+        r_f = dot3(q - p0, n)
         if one_sided:
             outside_face = outside_face_scalar(r_f)
             h0 *= outside_face
@@ -507,10 +548,9 @@ def vertex_face_term(
         face_term += h0 * h1
         # is the projection inside the face, determined by Phi^{e_i,f} signs, i= 0,1
         if phi0 > 0.0 and phi1 > 0.0:
-            r_abs = abs(r_f)
             # if it is, then compare to the current min distance, and replace if less
-            if r_abs < r_f_min:
-                r_f_min = r_abs
+            if abs(r_f) < r_f_min:
+                r_f_min = abs(r_f)
                 face_min = f
                 r_f_min_signed = r_f
 
@@ -520,7 +560,7 @@ def vertex_face_term(
 @njit(cache=True)
 def vertex_edge_term(
     q: ArrayF, v_idx: int,
-    conn: NumbaConnectivity, geom: NumbaGeometry,
+    conn: NumbaConnectivity,
     alpha: float, one_sided: bool,
 ) -> tuple[float, float, int, ArrayF]:
     """
@@ -536,14 +576,12 @@ def vertex_edge_term(
 
     start_e = conn.vertex_edge_offsets[v_idx]
     end_e = conn.vertex_edge_offsets[v_idx + 1]
-    # for eidx in m_vertices_to_edges
     for idx in range(start_e, end_e):
         edge_idx = conn.vertex_edge_indices[idx]
-        a = conn.edges[edge_idx, 0]
-        b = conn.edges[edge_idx, 1]
-        p0 = conn.V[a]
-        p1 = conn.V[b]
-        P_e, r_e, d_unit, unit_edge = edge_projection(q, p0, p1)
+        a, b = conn.edges[edge_idx]
+        p0, p1 = conn.V[a], conn.V[b]
+        d_unit = unit_dir(p0, p1)
+        P_e, r_e, unit_Pe_to_q = edge_projection(q, p0, d_unit)
 
         #  Phi^{v,e} terms
         if v_idx == a:
@@ -552,39 +590,39 @@ def vertex_edge_term(
             _phi_other, phi_v = phi_ve(q, p0, p1, d_unit)
         h_v = H_alpha_scalar(phi_v, alpha)
 
-        f0 = conn.edge_faces[edge_idx, 0]
-        f1 = conn.edge_faces[edge_idx, 1]
+        f0, f1 = conn.edge_faces[edge_idx]
         has_f1 = f1 >= 0
 
         #  Phi^{e,f} terms
-        phi_ef0 = 0.0
-        r_f0 = 0.0
-        h_face_0 = 0.0
+        phi_ef0 = r_f0 = h_face_0 = 0.0
         if f0 >= 0:
             local0 = find_local_edge(conn, f0, edge_idx)
-            phi_ef0 = dot3(unit_edge, geom.edge_inward[f0, local0])
+            f0_p0, f0_p1, f0_p2 = conn.V[conn.faces[f0, :]]
+            n0 = face_normal(f0_p0, f0_p1, f0_p2)
+            edge_inward_0 = face_edge_inward(n0, f0_p0, f0_p1, f0_p2, local0)
+            phi_ef0 = dot3(unit_Pe_to_q, edge_inward_0)
             h_face_0 = H_alpha_scalar(phi_ef0, alpha)
-            v0 = conn.faces[f0, 0]
-            r_f0 = dot3(q - conn.V[v0], geom.normals[f0])
+            r_f0 = dot3(q - f0_p0, n0)
             if one_sided:
                 h_face_0 *= outside_face_scalar(r_f0)
 
-        phi_ef1 = 0.0
-        r_f1 = 0.0
-        h_face_1 = 0.0
+        phi_ef1 = r_f1 = h_face_1 = 0.0
         if has_f1:
             local1 = find_local_edge(conn, f1, edge_idx)
-            phi_ef1 = dot3(unit_edge, geom.edge_inward[f1, local1])
+            f1_p0, f1_p1, f1_p2 = conn.V[conn.faces[f1, :]]
+            n1 = face_normal(f1_p0, f1_p1, f1_p2)
+            edge_inward_1 = face_edge_inward(n1, f1_p0, f1_p1, f1_p2, local1)
+            phi_ef1 = dot3(unit_Pe_to_q, edge_inward_1)
             h_face_1 = H_alpha_scalar(phi_ef1, alpha)
-            v1 = conn.faces[f1, 0]
-            r_f1 = dot3(q - conn.V[v1], geom.normals[f1])
+            r_f1 = dot3(q - f1_p0, n1)
             if one_sided:
                 h_face_1 *= outside_face_scalar(r_f1)
 
         if one_sided:
+            edge_n = edge_normal_from_faces(conn, edge_idx)
             if not outside_edge_scalar(
                 q,
-                r_e, P_e, geom.edge_normals[edge_idx],
+                r_e, P_e, edge_n,
                 r_f0, phi_ef0, has_f1, r_f1, phi_ef1,
             ):
                 h_v = 0.0
@@ -607,9 +645,8 @@ def vertex_edge_term(
 @njit(cache=True)
 def potential_vertex(
     q: ArrayF, v_idx: int,
-    conn: NumbaConnectivity, geom: NumbaGeometry,
-    alpha: float, p: float, epsilon: float,
-    localized: bool, one_sided: bool,
+    conn: NumbaConnectivity, pointed_vertices: ArrayF,
+    params: PotentialParameters,
 ) -> float:
     "potential due to vertex v_idx at point q"
     r_v = norm3(q - conn.V[v_idx])
@@ -617,32 +654,44 @@ def potential_vertex(
     # denominator of the potential has a sum over directional terms over faces and edges computed here
     # these are also needed to determine local sidedeness
 
-    face_term, r_f_min_signed, face_min = vertex_face_term(q, v_idx, conn, geom, alpha, one_sided)
+    face_term, r_f_min_signed, face_min = vertex_face_term(
+        q, v_idx,
+        conn,
+        params.alpha, params.one_sided,
+    )
 
     edge_term, r_e_min, edge_min, P_e_min = vertex_edge_term(
         q, v_idx,
-        conn, geom,
-        alpha, one_sided,
+        conn,
+        params.alpha, params.one_sided,
     )
 
-    if one_sided:
+    if params.one_sided:
+        edge_normal_min = np.zeros(3, dtype=np.float64)
+        if edge_min >= 0:
+            edge_normal_min = edge_normal_from_faces(conn, edge_min)
+        pointed_vertex = pointed_vertices[v_idx]
         if not outside_vertex_scalar(
-            q, v_idx,
-            conn, geom,
+            q,
             r_v,
-            r_f_min_signed, face_min,
-            r_e_min, edge_min, P_e_min,
+            r_f_min_signed,
+            face_min,
+            r_e_min,
+            edge_min,
+            P_e_min,
+            edge_normal_min,
+            pointed_vertex,
         ):
             return 0.0
 
-    denom = r_v ** p
+    denom = r_v ** params.p
     if denom <= eps:
         I_v = singular_value
     else:
         I_v = (1.0 - face_term - edge_term) / denom
 
-    if localized:
-        I_v *= h_epsilon_scalar(r_v, epsilon)
+    if params.localized:
+        I_v *= h_epsilon_scalar(r_v, params.epsilon)
     return I_v
 
 # ****************************************************************************
@@ -670,9 +719,7 @@ def get_vertices_and_edges(
             if edge_mark[edge_idx] == 0:
                 edge_mark[edge_idx] = 1
                 edge_count += 1
-        v0 = conn.faces[fidx, 0]
-        v1 = conn.faces[fidx, 1]
-        v2 = conn.faces[fidx, 2]
+        v0, v1, v2 = conn.faces[fidx]
         if vertex_mark[v0] == 0:
             vertex_mark[v0] = 1
             vertex_count += 1
@@ -698,9 +745,7 @@ def get_vertices_and_edges(
                 edge_mark[edge_idx] = 1
                 edge_list[edge_count] = edge_idx
                 edge_count += 1
-        v0 = conn.faces[fidx, 0]
-        v1 = conn.faces[fidx, 1]
-        v2 = conn.faces[fidx, 2]
+        v0, v1, v2 = conn.faces[fidx]
         if vertex_mark[v0] == 0:
             vertex_mark[v0] = 1
             vertex_list[vertex_count] = v0
@@ -716,6 +761,7 @@ def get_vertices_and_edges(
 
     return edge_list, vertex_list
 
+
 # ****************************************************************************
 #  Main potential calls
 
@@ -723,10 +769,9 @@ def get_vertices_and_edges(
 @njit(cache=True)
 def smoothed_offset_potential_point(
     q: ArrayF, face_indices: ArrayI,
-    conn: NumbaConnectivity, geom: NumbaGeometry,
-    alpha: float, p: float, epsilon: float,
+    conn: NumbaConnectivity, pointed_vertices: ArrayF,
+    params: PotentialParameters,
     include_faces: bool, include_edges: bool, include_vertices: bool,
-    localized: bool, one_sided: bool,
 ) -> float:
     """
     Compute potential from faces,edges and vertices given by the face list face_indices at point q.
@@ -742,39 +787,17 @@ def smoothed_offset_potential_point(
     edge_list, vertex_list = get_vertices_and_edges(face_indices, conn)
     if include_faces:
         for i in range(face_indices.size):
-            face_sum += potential_face( q, face_indices[i], conn, geom, alpha, p, epsilon, localized, one_sided)
+            face_sum += potential_face(q, face_indices[i], conn, params)
 
     if include_edges:
         for i in range(edge_list.size):
-            edge_sum += potential_edge(q, edge_list[i], conn, geom, alpha, p, epsilon, localized, one_sided)
+            edge_sum += potential_edge(q, edge_list[i], conn, params)
 
     if include_vertices:
         for i in range(vertex_list.size):
-            vertex_sum += potential_vertex(q, vertex_list[i], conn, geom, alpha, p, epsilon, localized, one_sided)
+            vertex_sum += potential_vertex(q, vertex_list[i], conn, pointed_vertices, params)
 
     return face_sum + edge_sum + vertex_sum
-
-
-@njit(cache=True)
-def _smoothed_offset_potential_numba_impl(
-    q: ArrayF, face_indices: ArrayI,
-    conn: NumbaConnectivity, geom: NumbaGeometry,
-    alpha: float, p: float, epsilon: float,
-    include_faces: bool, include_edges: bool, include_vertices: bool,
-    localized: bool, one_sided: bool,
-) -> ArrayF:
-    nq = q.shape[0]
-    out = np.zeros(nq, dtype=np.float64)
-    for i in range(nq):
-        out[i] = smoothed_offset_potential_point(
-            q[i], face_indices,
-            conn, geom,
-            alpha, p, epsilon,
-            include_faces, include_edges, include_vertices,
-            localized, one_sided,
-        )
-    return out
-
 
 
 def smoothed_offset_potential_numba(
@@ -800,13 +823,17 @@ def smoothed_offset_potential_numba(
         raise ValueError("q must have shape (3,) or (nq, 3).")
 
     conn = _build_numba_connectivity(mesh)
-    geom_nb = _build_numba_geometry(geom)
+    pointed_vertices = np.asarray(geom.pointed_vertices, dtype=np.bool_)
     face_indices = np.arange(conn.faces.shape[0], dtype=np.int64)
+    params = PotentialParameters(alpha, p, epsilon, localized, one_sided)
 
-    return _smoothed_offset_potential_numba_impl(
-        q, face_indices,
-        conn,geom_nb,
-        alpha, p, epsilon,
-        include_faces, include_edges, include_vertices,
-        localized, one_sided,
-    )
+    nq = q.shape[0]
+    out = np.zeros(nq, dtype=np.float64)
+    for i in range(nq):
+        out[i] = smoothed_offset_potential_point(
+            q[i], face_indices,
+            conn, pointed_vertices,
+            params,
+            include_faces, include_edges, include_vertices,
+        )
+    return out
