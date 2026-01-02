@@ -207,10 +207,44 @@ vertex_face_term:
  potential_vertex  q, p_v, neighbor_points
   (BUT NOT pointed_vertex)
 
+2) Implement the following API for the cpp code: 
+   a) PotentialParameters struct with alpha, p, epsilon, localized, one_sided, params below of this type
+
+   
+   b) potential_face(), potential_edge(), potential_vertex()  with signatures matching python numba code: 
+        double potential_face(q, face_points, params) 
+        double potential_edge(q, edge_points, has_f1, params)
+        double potential_vertex(q,   p_v,  neighbor_points,  is_boundary, pointed_vertex, params)
+        these are instantiations of templated functions for type double. 
+   c) smooth_offset_potential()  with signature 
+   Eigen::VectorXd smoothed_offset_potential(
+    Eigen::ConstRef<Eigen::MatrixXd> q,
+    const PotentialCollisionMesh& mesh,
+    const PotentialParameters& params, 
+    bool include_faces, bool include_edges, bool include_vertices);
+   and 
+   Eigen::VectorXd smoothed_offset_potential_cpp(
+    Eigen::ConstRef<Eigen::MatrixXd> q,
+    Eigen::ConstRef<Eigen::MatrixXd> V,
+    Eigen::ConstRef<Eigen::MatrixXi> F,
+    double alpha, double p, double epsilon,
+    bool include_faces, bool include_edges, bool include_vertices,
+    bool localized, bool one_sided);
+    which constructs the  PotentialCollisionMesh and PotentialParameters from the input. 
+   d) wrappers for autodiff functions 
+     void potential_face_grad_hess(..)
+     void potential_edge_grad_hess(..)
+     void potential_vertex_grad_hess(..) 
+     with same signatures as potential_face,potential_edge, potential_vertex, but in addition return variables which are 
+    the gradient vectors of size (face_points +1) * 3,  (edge_points+1) * 3, (neighbor_points+2) * 3
+    where + 1 accounts for q, in face and edge functions  and +2 for q and p_v in vertex function. 
+    the hessian of same size in each dimension. 
 
 
-2) Instantiate and test for `F=double` (must match Step 1 results).
-3) Instantiate and test for TinyAD autodiff scalar type:
+
+
+3) Instantiate and test for `F=double` (must match Step 1 results).
+4) Instantiate and test for TinyAD autodiff scalar type:
    - Ensure potential evaluation values match numba (derivatives can be checked later).
-4) Test first derivatives using finite differences, for each of  the functions  potential_face, potential_edge, potential_vertex,
-4) Keep the Python verification tests passing unchanged.
+5) Test first derivatives using finite differences, for each of  the functions  potential_face, potential_edge, potential_vertex,
+6) Keep the Python verification tests passing unchanged.

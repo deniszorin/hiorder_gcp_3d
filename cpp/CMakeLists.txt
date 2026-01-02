@@ -59,11 +59,13 @@ target_link_libraries(cone_convex_hull PRIVATE predicates)
 add_library(potential_core STATIC
     potential_collision_mesh.cpp
     potential_cpp.cpp
+    potential_tinyad.cpp
 )
 
 target_include_directories(potential_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${EIGEN3_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/TinyAD/include
 )
 
 target_link_libraries(potential_core PUBLIC

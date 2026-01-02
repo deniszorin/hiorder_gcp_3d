@@ -90,7 +90,7 @@ def face_normal(p0: ArrayF, p1: ArrayF, p2: ArrayF) -> ArrayF:
 
 
 @njit(cache=True)
-def face_edge_endpoints( p0: ArrayF, p1: ArrayF, p2: ArrayF,local_edge: int,
+def face_edge_endpoints(p0: ArrayF, p1: ArrayF, p2: ArrayF, local_edge: int,
 ) -> tuple[ArrayF, ArrayF]:
     """
     Given  face vertices (p0,p1,p2) and local_edge index 0..2, return endpoints
@@ -422,38 +422,40 @@ def potential_face(
 
 @njit(cache=True)
 def potential_edge(
-    q: ArrayF, face_points: ArrayF,
-    local0: int, local1: int, has_f1: bool,
+    q: ArrayF, edge_points: ArrayF,
+    has_f1: bool,
     params: PotentialParameters,
 ) -> float:
     """
-    Evaluate the potential from an edge, at point q
-    Parameters are the same as for the top-level potential function
-    returns the value of the potential
+    Evaluate the potential from an edge, at point q.
+    edge_points[0:2] are the edge endpoints, edge_points[2] is f0's non-edge point,
+    edge_points[3] is f1's non-edge point when has_f1 is True.
     """
-    f0_p0, f0_p1, f0_p2 = face_points[0]
-    edge_p0, edge_p1 = face_edge_endpoints(f0_p0, f0_p1, f0_p2, local0)
+
+    edge_p0,edge_p1  = edge_points[0],edge_points[1]
+    f0_p0, f0_p1, f0_p2 = edge_p0, edge_p1, edge_points[2]
+
     d_unit = unit_dir(edge_p0, edge_p1)
     P_e, r_e, unit_Pe_to_q = edge_projection(q, edge_p0, d_unit)
     phi0, phi1 = phi_ve(q, edge_p0, edge_p1, d_unit)
 
     phi_ef0 = r_f0 = h_face_0 = 0.0
-    n0 = face_normal(f0_p0, f0_p1, f0_p2)
-    edge_inward_0 = face_edge_inward(n0, f0_p0, f0_p1, f0_p2, local0)
-    phi_ef0 = dot3(unit_Pe_to_q, edge_inward_0)
-    h_face_0 = H_alpha_scalar(phi_ef0, params.alpha)
-    r_f0 = dot3(q - f0_p0, n0)
+    n0            = face_normal(f0_p0, f0_p1, f0_p2)
+    edge_inward_0 = face_edge_inward(n0, f0_p0, f0_p1, f0_p2, 0)
+    phi_ef0       = dot3(unit_Pe_to_q, edge_inward_0)
+    h_face_0      = H_alpha_scalar(phi_ef0, params.alpha)
+    r_f0          = dot3(q - f0_p0, n0)
     if params.one_sided:
         h_face_0 *= outside_face_scalar(r_f0)
 
     phi_ef1 = r_f1 = h_face_1 = 0.0
     if has_f1:
-        f1_p0, f1_p1, f1_p2 = face_points[1]
-        n1 = face_normal(f1_p0, f1_p1, f1_p2)
-        edge_inward_1 = face_edge_inward(n1, f1_p0, f1_p1, f1_p2, local1)
-        phi_ef1 = dot3(unit_Pe_to_q, edge_inward_1)
-        h_face_1 = H_alpha_scalar(phi_ef1, params.alpha)
-        r_f1 = dot3(q - f1_p0, n1)
+        f1_p0, f1_p1, f1_p2 = edge_p1, edge_p0, edge_points[3]
+        n1            = face_normal(f1_p0, f1_p1, f1_p2)
+        edge_inward_1 = face_edge_inward(n1, f1_p0, f1_p1, f1_p2, 0)
+        phi_ef1       = dot3(unit_Pe_to_q, edge_inward_1)
+        h_face_1      = H_alpha_scalar(phi_ef1, params.alpha)
+        r_f1          = dot3(q - f1_p0, n1)
         if params.one_sided:
             h_face_1 *= outside_face_scalar(r_f1)
 
@@ -467,6 +469,10 @@ def potential_edge(
         I_e = B_edge / denom
 
     if params.one_sided:
+        face_points = np.empty((2, 3, 3), dtype=np.float64)
+        set_face_points(face_points, 0, f0_p0, f0_p1, f0_p2)
+        if has_f1:
+            set_face_points(face_points, 1, f1_p0, f1_p1, f1_p2)
         edge_n = edge_normal_from_faces(face_points, has_f1)
         if not outside_edge_scalar(
             q,
@@ -513,8 +519,8 @@ def vertex_face_term(
         # face directional factor affecting the vertex (incident edges only)
         phi0 = phi_ef(q, n, p0, p1, p2, 0)
         phi1 = phi_ef(q, n, p0, p1, p2, 1)
-        h0 = H_alpha_scalar(phi0, alpha)
-        h1 = H_alpha_scalar(phi1, alpha)
+        h0   = H_alpha_scalar(phi0, alpha)
+        h1   = H_alpha_scalar(phi1, alpha)
 
         r_f = dot3(q - p0, n)
         if one_sided:
@@ -590,11 +596,11 @@ def vertex_edge_term(
         n_face = np.zeros((2, 3), dtype=np.float64)
         for j in range(face_count):
             p0, p1, p2 = face_points[j]
-            n = face_normal(p0, p1, p2)
+            n =           face_normal(p0, p1, p2)
             edge_inward = face_edge_inward(n, p0, p1, p2, local_edges[j])
-            phi_ef[j] = dot3(unit_Pe_to_q, edge_inward)
-            h_face[j] = H_alpha_scalar(phi_ef[j], alpha)
-            r_f[j] = dot3(q - p0, n)
+            phi_ef[j] =   dot3(unit_Pe_to_q, edge_inward)
+            h_face[j] =   H_alpha_scalar(phi_ef[j], alpha)
+            r_f[j] =      dot3(q - p0, n)
             if one_sided:
                 h_face[j] *= outside_face_scalar(r_f[j])
             n_face[j] = n
@@ -667,12 +673,8 @@ def potential_vertex(
         if not outside_vertex_scalar(
             q,
             r_v,
-            r_f_min_signed,
-            face_min,
-            r_e_min,
-            edge_min,
-            P_e_min,
-            edge_normal_min,
+            r_f_min_signed, face_min,
+            r_e_min, edge_min, P_e_min, edge_normal_min,
             pointed_vertex,
         ):
             return 0.0
@@ -792,15 +794,21 @@ def smoothed_offset_potential_point(
                 f0, f1 = f1, -1
             has_f1 = f1 >= 0
             local0 = find_local_edge(conn, f0, edge_idx)
-            local1 = -1
-            face_points = np.zeros((2, 3, 3), dtype=np.float64)
-            face_points[0] = conn.V[conn.faces[f0, :]]
+            edge_v0 =  conn.faces[f0, local0]
+            edge_v1 =  conn.faces[f0, (local0 + 1) % 3]
+            other_v0 = conn.faces[f0, (local0 + 2) % 3]
+
+            edge_points = np.empty((4, 3), dtype=np.float64)
+            edge_points[0] = conn.V[edge_v0]
+            edge_points[1] = conn.V[edge_v1]
+            edge_points[2] = conn.V[other_v0]
             if has_f1:
                 local1 = find_local_edge(conn, f1, edge_idx)
-                face_points[1] = conn.V[conn.faces[f1, :]]
+                other_v1 = conn.faces[f1, (local1 + 2) % 3]
+                edge_points[3] = conn.V[other_v1]
             edge_sum += potential_edge(
-                q, face_points,
-                local0, local1, has_f1,
+                q, edge_points,
+                has_f1,
                 params,
             )
 
