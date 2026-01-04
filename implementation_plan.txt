@@ -162,7 +162,7 @@ Numba potential acceleration plan (smoothed_offset_potential) - detailed
      choose grid sizes so tests stay under 3 minutes.
 
  
-C++ potential + auto-diff plan (using CollisionMesh)
+# C++ potential + auto-diff plan (using CollisionMesh)
 
 Mapping from Python MeshData/MeshGeometry to cpp::CollisionMesh (+ derived class)
 - MeshData.V -> CollisionMesh::rest_positions() (Eigen::MatrixXd)

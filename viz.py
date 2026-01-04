@@ -200,6 +200,7 @@ def isolines_with_clip(
     use_numba: bool = False,
     use_cpp: bool = False,
     use_accelerated: bool = False,
+    use_simplified: bool = False,
     show_mesh: bool = False,
     use_widget: bool = True,
     clip_origin: Optional[ArrayF] = None,
@@ -287,21 +288,50 @@ def isolines_with_clip(
         origin = base_origin + state["offset"] * normal
 
         q_plane = sample_plane_grid(origin, normal, extent=extent, resolution=res)
-        values = smoothed_offset_potential(
-            q_plane,
-            mesh,
-            geom,
-            alpha=alpha,
-            p=p,
-            localized=localized,
-            include_faces=include_faces,
-            include_edges=include_edges,
-            include_vertices=include_vertices,
-            one_sided=one_sided,
-            use_numba=use_numba,
-            use_cpp=use_cpp,
-            use_accelerated=use_accelerated,
-        )
+        if use_simplified:
+            from simplified_potential_numba import (
+                simplified_smoothed_offset_potential_numba,
+                simplified_smoothed_offset_potential_accelerated,
+            )
+
+            if use_accelerated:
+                values = simplified_smoothed_offset_potential_accelerated(
+                    q_plane, mesh, geom,
+                    alpha=alpha,
+                    p=p,
+                    localized=localized,
+                    include_faces=include_faces,
+                    include_edges=include_edges,
+                    include_vertices=include_vertices,
+                    one_sided=one_sided,
+                )
+            else:
+                values = simplified_smoothed_offset_potential_numba(
+                    q_plane, mesh, geom,
+                    alpha=alpha,
+                    p=p,
+                    localized=localized,
+                    include_faces=include_faces,
+                    include_edges=include_edges,
+                    include_vertices=include_vertices,
+                    one_sided=one_sided,
+                )
+        else:
+            values = smoothed_offset_potential(
+                q_plane,
+                mesh,
+                geom,
+                alpha=alpha,
+                p=p,
+                localized=localized,
+                include_faces=include_faces,
+                include_edges=include_edges,
+                include_vertices=include_vertices,
+                one_sided=one_sided,
+                use_numba=use_numba,
+                use_cpp=use_cpp,
+                use_accelerated=use_accelerated,
+            )
 
         plane_points = pv.PolyData(q_plane)
         plane_points.point_data["potential"] = values
@@ -452,6 +482,7 @@ def isosurface_with_clip(
     use_numba: bool = False,
     use_cpp: bool = False,
     use_accelerated: bool = False,
+    use_simplified: bool = False,
     show_mesh: bool = False,
     use_widget: bool = True,
     clip_origin: Optional[ArrayF] = None,
@@ -478,21 +509,50 @@ def isosurface_with_clip(
     xx, yy, zz = np.meshgrid(xs, ys, zs, indexing="ij")
     points = np.stack([xx, yy, zz], axis=-1).reshape(-1, 3)
 
-    values = smoothed_offset_potential(
-        points,
-        mesh,
-        geom,
-        alpha=alpha,
-        p=p,
-        localized=localized,
-        include_faces=include_faces,
-        include_edges=include_edges,
-        include_vertices=include_vertices,
-        one_sided=one_sided,
-        use_numba=use_numba,
-        use_cpp=use_cpp,
-        use_accelerated=use_accelerated,
-    )
+    if use_simplified:
+        from simplified_potential_numba import (
+            simplified_smoothed_offset_potential_numba,
+            simplified_smoothed_offset_potential_accelerated,
+        )
+
+        if use_accelerated:
+            values = simplified_smoothed_offset_potential_accelerated(
+                points, mesh, geom,
+                alpha=alpha,
+                p=p,
+                localized=localized,
+                include_faces=include_faces,
+                include_edges=include_edges,
+                include_vertices=include_vertices,
+                one_sided=one_sided,
+            )
+        else:
+            values = simplified_smoothed_offset_potential_numba(
+                points, mesh, geom,
+                alpha=alpha,
+                p=p,
+                localized=localized,
+                include_faces=include_faces,
+                include_edges=include_edges,
+                include_vertices=include_vertices,
+                one_sided=one_sided,
+            )
+    else:
+        values = smoothed_offset_potential(
+            points,
+            mesh,
+            geom,
+            alpha=alpha,
+            p=p,
+            localized=localized,
+            include_faces=include_faces,
+            include_edges=include_edges,
+            include_vertices=include_vertices,
+            one_sided=one_sided,
+            use_numba=use_numba,
+            use_cpp=use_cpp,
+            use_accelerated=use_accelerated,
+        )
     log_values = np.log10(np.maximum(values, 1e-12))
 
     grid = pv.ImageData()

@@ -201,11 +201,10 @@ The formulas for the vertex and edge are same as in 2D:
 The total potential is defined as follows: 
 
 \begin{equation}
-P(q) = \sum_f P_{f}(q) - \sum_e (\mbox{val}(e)-1)P_e(q) 
-- \sum_v (\mbox{val}(v)-1)P_v(q) 
+P(q) = \sum_f P_{f}(q) - \sum_{\mbox{\scriptsize internal}\; e} P_e(q) 
++ \sum_{\mbox{\scriptsize internal}\; v} P_v(q) 
 \label{eq:simplified-3D}
 \end{equation}
-where the vertex valence $\mbox{val}(v)$ is defined as the number of incident edges, and the edge valence $\mbox{val}(e)$ is the number of incident faces (1 or 2).
 
 \paragraph{Computing $r_e$ and $r_f$} To compute the distance from a point $q$ to an edge $e$, 
 with endpoints $p_0$ and $p_1$, we compute the projection $q_e$ of $q$ to the line of the edge, and check if it is inside the segment, if yes, then the distance $r_e = \| q - q_e\|$.  If $q_p$ is outside the segment, then $r_e$ is the distance to the closest endpoint.   
