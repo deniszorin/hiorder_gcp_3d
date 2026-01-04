@@ -65,6 +65,46 @@ PYBIND11_MODULE(_potential_cpp, m)
         "Compute smoothed offset potential using the C++ implementation.");
 
     m.def(
+        "smoothed_offset_potential_accelerated_cpp",
+        [](
+            Eigen::ConstRef<Eigen::MatrixXd> q,
+            Eigen::ConstRef<Eigen::MatrixXd> V,
+            Eigen::ConstRef<Eigen::MatrixXi> F,
+            double alpha,
+            double p,
+            double epsilon,
+            bool include_faces,
+            bool include_edges,
+            bool include_vertices,
+            bool localized,
+            bool one_sided) {
+            return ipc::smoothed_offset_potential_accelerated_cpp(
+                q,
+                V,
+                F,
+                alpha,
+                p,
+                epsilon,
+                include_faces,
+                include_edges,
+                include_vertices,
+                localized,
+                one_sided);
+        },
+        py::arg("q"),
+        py::arg("V"),
+        py::arg("F"),
+        py::arg("alpha") = 0.1,
+        py::arg("p") = 2.0,
+        py::arg("epsilon") = 0.1,
+        py::arg("include_faces") = true,
+        py::arg("include_edges") = true,
+        py::arg("include_vertices") = true,
+        py::arg("localized") = false,
+        py::arg("one_sided") = false,
+        "Compute smoothed offset potential using the C++ accelerated implementation.");
+
+    m.def(
         "pointed_vertices_cpp",
         [](
             Eigen::ConstRef<Eigen::MatrixXd> V,

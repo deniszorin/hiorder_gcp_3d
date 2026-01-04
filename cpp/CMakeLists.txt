@@ -10,6 +10,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+find_package(VTK REQUIRED COMPONENTS CommonCore CommonDataModel)
 
 execute_process(
     COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
@@ -45,6 +46,8 @@ target_include_directories(collision_mesh PUBLIC
     ${EIGEN3_INCLUDE_DIR}
 )
 
+target_link_libraries(collision_mesh PUBLIC Eigen3::Eigen)
+
 add_library(cone_convex_hull STATIC
     cone_convex_hull.cpp
 )
@@ -55,6 +58,7 @@ target_include_directories(cone_convex_hull PUBLIC
 )
 
 target_link_libraries(cone_convex_hull PRIVATE predicates)
+target_link_libraries(cone_convex_hull PUBLIC Eigen3::Eigen)
 
 add_library(potential_core STATIC
     potential_collision_mesh.cpp
@@ -71,6 +75,9 @@ target_include_directories(potential_core PUBLIC
 target_link_libraries(potential_core PUBLIC
     collision_mesh
     cone_convex_hull
+    Eigen3::Eigen
+    VTK::CommonCore
+    VTK::CommonDataModel
 )
 
 add_library(_potential_cpp MODULE

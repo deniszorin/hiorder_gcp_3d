@@ -70,7 +70,9 @@ def h_local(z: ArrayF) -> ArrayF:
     """Localization polynomial h(z) = (2z + 1)(z - 1)^2."""
 
     z = np.asarray(z, dtype=float)
-    return (2.0 * z + 1.0) * (z - 1.0) ** 2
+    out = (2.0 * z + 1.0) * (z - 1.0) ** 2
+    out[z > 1.0] = 0.0
+    return out
 
 
 def h_epsilon(z: ArrayF, epsilon: float) -> ArrayF:
@@ -390,6 +392,7 @@ def smoothed_offset_potential(
     one_sided: bool = False,
     use_numba: bool = False,
     use_cpp: bool = False,
+    use_accelerated: bool = False,
 ) -> ArrayF:
     """Compute smoothed offset potential at q points."""
 
@@ -400,6 +403,19 @@ def smoothed_offset_potential(
             q,
             mesh.V,
             mesh.faces,
+            alpha=alpha, p=p, epsilon=epsilon,
+            include_faces=include_faces, include_edges=include_edges,
+            include_vertices=include_vertices,
+            localized=localized, one_sided=one_sided,
+        )
+
+    if use_accelerated:
+        from potential_numba import smoothed_offset_potential_accelerated
+
+        return smoothed_offset_potential_accelerated(
+            q,
+            mesh,
+            geom,
             alpha=alpha, p=p, epsilon=epsilon,
             include_faces=include_faces, include_edges=include_edges,
             include_vertices=include_vertices,

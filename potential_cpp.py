@@ -106,6 +106,22 @@ def smoothed_offset_potential_cpp(
     )
 
 
+def smoothed_offset_potential_accelerated_cpp(
+    q: np.ndarray, V: np.ndarray, F: np.ndarray,
+    *,
+    alpha: float = 0.1, p: float = 2.0, epsilon: float = 0.1,
+    include_faces: bool = True, include_edges: bool = True, include_vertices: bool = True,
+    localized: bool = False, one_sided: bool = False,
+) -> np.ndarray:
+    module = _load_extension(required=("smoothed_offset_potential_accelerated_cpp",))
+    return module.smoothed_offset_potential_accelerated_cpp(
+        q, V, F,
+        alpha, p, epsilon,
+        include_faces, include_edges, include_vertices,
+        localized, one_sided,
+    )
+
+
 def pointed_vertices_cpp(
     V: np.ndarray, F: np.ndarray,
 ) -> np.ndarray:

@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import geometry
 import potential
@@ -22,6 +23,12 @@ def _sample_mesh_grid(mesh, resolution):
     bounds_min = mesh.V.min(axis=0) - 0.5
     bounds_max = mesh.V.max(axis=0) + 0.5
     return viz.sample_volume_grid(bounds_min, bounds_max, resolution=resolution)
+
+
+def _bounding_box_size(mesh):
+    bounds_min = mesh.V.min(axis=0)
+    bounds_max = mesh.V.max(axis=0)
+    return float(np.max(bounds_max - bounds_min))
 
 
 def test_smoothed_offset_potential_numba_triangle_matches():
@@ -150,3 +157,31 @@ def test_smoothed_offset_potential_numba_flipped_normals():
             one_sided=scene.one_sided,
         )
         np.testing.assert_allclose(numba_vals, ref, rtol=1e-6, atol=1e-6)
+
+
+def test_smoothed_offset_potential_numba_accelerated_localized_matches():
+    pytest.importorskip("vtk")
+    scenes = viz.build_validation_scene_specs()
+    for scene in scenes:
+        print(f"scene: {scene.name} (accelerated)")
+        mesh = scene.mesh
+        geom = geometry.precompute_mesh_geometry(mesh)
+        q = _sample_mesh_grid(mesh, resolution=10)
+        epsilon = 0.1 * _bounding_box_size(mesh)
+        ref = potential_numba.smoothed_offset_potential_numba(
+            q,
+            mesh,
+            geom,
+            epsilon=epsilon,
+            localized=True,
+            one_sided=scene.one_sided,
+        )
+        accel = potential_numba.smoothed_offset_potential_accelerated(
+            q,
+            mesh,
+            geom,
+            epsilon=epsilon,
+            localized=True,
+            one_sided=scene.one_sided,
+        )
+        np.testing.assert_allclose(accel, ref, rtol=1e-6, atol=1e-6)

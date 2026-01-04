@@ -163,6 +163,7 @@ Numba potential acceleration plan (smoothed_offset_potential) - detailed
 
  
 C++ potential + auto-diff plan (using CollisionMesh)
+
 Mapping from Python MeshData/MeshGeometry to cpp::CollisionMesh (+ derived class)
 - MeshData.V -> CollisionMesh::rest_positions() (Eigen::MatrixXd)
 - MeshData.faces -> CollisionMesh::faces() (Eigen::MatrixXi)
@@ -248,3 +249,91 @@ vertex_face_term:
    - Ensure potential evaluation values match numba (derivatives can be checked later).
 5) Test first derivatives using finite differences, for each of  the functions  potential_face, potential_edge, potential_vertex,
 6) Keep the Python verification tests passing unchanged.
+
+Acceleration in python using VTK 
+
+For the python numba code, add acceleration of localized potential using vtk.  
+  Add a function smoothed_pffset_potential_accelerated that does the following:
+  1) takes the mesh in V,F format and convert it to the format VTK accepts, i.e. add a 3 for each face
+  (make this efficient using numpy in the case we try larger meshes)
+  2) initialize  vtk.vtkStaticCellLocator() with this mesh, use a preallocated vtkIdList  for results 
+  resetting each time. 
+  3)  For each query point q,  create a bounding box of size 2 epsilon with q in the center, and use the locator to find all faces in the box.  
+  Pass the query point and this list of faces if not empty to numba version of smoothed_offset_potential_point to evaluate. 
+  Test that accelerated version matches non-accelerated. 
+
+
+Simplified Potential
+1) Shared numba helpers (new module, e.g. potential_numba_shared.py)
+   - Move reusable definitions from potential_numba.py:
+     ArrayF/ArrayI, singular_value, eps, NumbaConnectivity, PotentialParameters.
+   - Move low-level vector/geometry helpers:
+     dot3, norm3, safe_norm, unit_vec, unit_dir, cross3,
+     face_normal, face_edge_endpoints, face_edge_inward,
+     edge_projection, set_face_points.
+   - Move potential helper scalars:
+     H_scalar, H_alpha_scalar, h_local_scalar, h_epsilon_scalar.
+   - Move connectivity helpers:
+     _build_csr, _build_numba_connectivity, find_local_edge,
+     get_vertices_and_edges.
+   - Move outside tests but do not use them for simplified:
+     outside_face_scalar, edge_normal_from_faces,
+     outside_edge_scalar, outside_vertex_scalar.
+   - Update potential_numba.py to import these from the shared module without
+     changing public APIs.
+
+2) Simplified distance helpers (numba)
+   - Implement segment distance/projection helper:
+     project_point_to_segment(q, p0, p1) -> (q_e, r_e, inside_segment).
+   - Implement triangle distance helper per the simplified definition:
+     project_point_to_triangle(q, p0, p1, p2) -> r_f.
+     Steps: project q to plane; check inside with edge halfspace tests;
+     if inside, r_f = |dot(q - p0, n)|; else compute distances to edges
+     with segment projection; if all projections outside, use min distance
+     to vertices.
+   - Keep these helpers local to simplified_potential_numba.py unless a
+     clear reuse case appears.
+
+3) simplified_potential_numba.py (new module, numba-first)
+   - Reuse PotentialParameters from the shared module; ignore params.alpha
+     and params.one_sided in all simplified kernels.
+   - Implement element kernels with signatures mirroring potential_numba.py
+     simplified_potential_face(q, face_points, params)
+     simplified_potential_edge(q, edge_points, params)
+     simplified_potential_vertex(q, p_v, params)
+   - Implement point evaluator:
+     simplified_smoothed_offset_potential_point(
+       q, face_indices, conn, params,
+       include_faces, include_edges, include_vertices,
+       edge_valence, vertex_valence
+     )
+     Use get_vertices_and_edges for the subset; compute total as:
+       sum_f Pf - sum_e (val_e - 1) * Pe - sum_v (val_v - 1) * Pv.
+   - Top-level entry point mirroring numba API:
+     simplified_smoothed_offset_potential_numba(
+       q, mesh, geom, alpha=..., p=..., epsilon=...,
+       include_faces=..., include_edges=..., include_vertices=...,
+       localized=..., one_sided=...
+     )
+     Build conn via _build_numba_connectivity; precompute valence arrays:
+       edge_valence = count of edge_faces >= 0, vertex_valence from
+       vertex_edge_offsets; loop points and call the point evaluator.
+   - Accelerated entry point mirroring numba API:
+     simplified_smoothed_offset_potential_accelerated(...) using the same
+     VTK locator flow as potential_numba.smoothed_offset_potential_accelerated,
+     but calling simplified_smoothed_offset_potential_point.
+
+4) Tests (no localization, one_sided=False)
+   - Add tests comparing simplified vs smoothed_offset_potential with alpha=0
+     on the full validation suite from viz.build_validation_scene_specs().
+   - Use the same sampling grid as tests/test_potential_numba.py and assert
+     allclose with small tolerances (rtol/atol ~ 1e-6).
+   - Keep localized=False and one_sided=False for both sides.
+   - Do not touch tests/data/potential_regression.npz.
+
+5) Visualization toggles
+   - Add an option to isolines_with_clip and isosurface_with_clip
+     (e.g., use_simplified: bool = False or potential_mode="smoothed"/"simplified")
+     and branch to simplified_smoothed_offset_potential_numba when selected.
+   - Keep existing use_numba/use_cpp/use_accelerated behavior for the
+     smoothed potential path.

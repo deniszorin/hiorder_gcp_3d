@@ -22,8 +22,6 @@
 We have a mesh with the set of faces $F$, edges $E$ and  vertices $V$.   Each face is triangular; we assume that all vertices of each face are distinct, and  at most one edge connects any two vertices.  In this case, faces is defined by a sequence of vertex indices $(v_0, v_1, v_2)$ and edges are defined by pairs of vertices $(v_0, v_1)$.  The mesh is an  edge-manifold, i.e., each edge is  shared by at most two faces. We assume that if two faces share an edge $(v_0, v_1)$,  in one face the vertices are enumerated, up to circular permutation as $(v_0, v_1, v_2)$, and in the other $(v_1,v_0,v_3)$, 
 i.e., the order is reversed. This implies the mesh is orientable.  
 
-\section{3D smoothed offset potential for meshes}
-
 We define the 3D potential following the pattern of the 2D definition.  We start with defining the potential for a triangular face, then define the edge potential as a complement of the face potential, and finally the vertex potential.   
 
 Let $H^\alpha(z)$ be a smoothed Heaviside function transitioning from $0$ to $1$ on the segment $[-\alpha,\alpha]$. For a point $q$, let $P_e(q)$, $e=e_0,e_1, e_2$ be the projection of the point to the line of one of the edges of the triangle,  and $r^f(q)$ be the distance to the triangle plane. Let 
@@ -180,8 +178,38 @@ there is a $j(q)$, s.t., $(q - p_v) \cdot (p_{j(q)} - p_v) \neq 0$ }\\
 PC(v),\; \mbox{if $a(q) =v$} 
 \end{cases}
 \]
-
-
-
 \end{itemize}
+
+
+\section{Simplified potential definition}
+
+In this case, we define the potential in exactly the same way for vertices and edges; only the distance is computed: 
+\[
+P_{v}(q) = \frac{h_\epsilon(r_v(q))}{r_v(q)^p},
+\; 
+P_{e}(q) = \frac{h_\epsilon(r_e(q))}{r_e(q)^p}.
+\]
+
+For a face, we use  also use:
+
+\[
+P_{f}(q) = \frac{h_\epsilon(r_f(q))}{r_f(q)^p}
+\]
+where $r_f(q)$ is the distance from $q$ to the face. 
+The formulas for the vertex and edge are same as in 2D: 
+
+The total potential is defined as follows: 
+
+\begin{equation}
+P(q) = \sum_f P_{f}(q) - \sum_e (\mbox{val}(e)-1)P_e(q) 
+- \sum_v (\mbox{val}(v)-1)P_v(q) 
+\label{eq:simplified-3D}
+\end{equation}
+where the vertex valence $\mbox{val}(v)$ is defined as the number of incident edges, and the edge valence $\mbox{val}(e)$ is the number of incident faces (1 or 2).
+
+\paragraph{Computing $r_e$ and $r_f$} To compute the distance from a point $q$ to an edge $e$, 
+with endpoints $p_0$ and $p_1$, we compute the projection $q_e$ of $q$ to the line of the edge, and check if it is inside the segment, if yes, then the distance $r_e = \| q - q_e\|$.  If $q_p$ is outside the segment, then $r_e$ is the distance to the closest endpoint.   
+
+For a face $f$, consider the projection  $q_f$ of $q$ onto the plane of the face. If it is in the face interior, then $r_f =\| q -q_f\|$.  Otherwise, project it to the lines of edges to get projections $q_{e_i}$, and determine in which cases it is inside the edge segments $e_i$, $i= 0\ldots 2$. If there is one or more such edge, take the minimal distance $\| q - q_{e_i}\|$. Finally, if the projections to all edges are outside the segments, take the distance   $\| q - p_i\|$, $i=0\ldots 2$ to the closest vertex of the face. 
+
 \end{document}

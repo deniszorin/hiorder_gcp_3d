@@ -204,6 +204,9 @@ inline F H_alpha(const F& t, const double alpha)
 template <typename F>
 inline F h_local(const F& z)
 {
+    if (z > 1.0) {
+        return make_constant(0.0, z);
+    }
     return (2.0 * z + 1.0) * (z - 1.0) * (z - 1.0);
 }
 

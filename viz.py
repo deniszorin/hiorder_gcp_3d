@@ -199,6 +199,7 @@ def isolines_with_clip(
     localized: bool = False,
     use_numba: bool = False,
     use_cpp: bool = False,
+    use_accelerated: bool = False,
     show_mesh: bool = False,
     use_widget: bool = True,
     clip_origin: Optional[ArrayF] = None,
@@ -299,6 +300,7 @@ def isolines_with_clip(
             one_sided=one_sided,
             use_numba=use_numba,
             use_cpp=use_cpp,
+            use_accelerated=use_accelerated,
         )
 
         plane_points = pv.PolyData(q_plane)
@@ -449,6 +451,7 @@ def isosurface_with_clip(
     localized: bool = False,
     use_numba: bool = False,
     use_cpp: bool = False,
+    use_accelerated: bool = False,
     show_mesh: bool = False,
     use_widget: bool = True,
     clip_origin: Optional[ArrayF] = None,
@@ -488,6 +491,7 @@ def isosurface_with_clip(
         one_sided=one_sided,
         use_numba=use_numba,
         use_cpp=use_cpp,
+        use_accelerated=use_accelerated,
     )
     log_values = np.log10(np.maximum(values, 1e-12))
 

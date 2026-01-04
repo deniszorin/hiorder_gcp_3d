@@ -162,6 +162,8 @@ def H_alpha_scalar(t: float, alpha: float) -> float:
 
 @njit(cache=True)
 def h_local_scalar(z: float) -> float:
+    if z > 1.0:
+        return 0.0
     return (2.0 * z + 1.0) * (z - 1.0) ** 2
 
 
@@ -868,6 +870,99 @@ def smoothed_offset_potential_numba(
     nq = q.shape[0]
     out = np.zeros(nq, dtype=np.float64)
     for i in range(nq):
+        out[i] = smoothed_offset_potential_point(
+            q[i], face_indices,
+            conn, pointed_vertices,
+            params,
+            include_faces, include_edges, include_vertices,
+        )
+    return out
+
+
+def smoothed_offset_potential_accelerated(
+    q: ArrayF,
+    mesh, geom,
+    alpha: float = 0.1, p: float = 2.0, epsilon: float = 0.1,
+    include_faces: bool = True, include_edges: bool = True, include_vertices: bool = True,
+    localized: bool = False, one_sided: bool = False,
+) -> ArrayF:
+    """
+    Compute potential from a mesh at points in the array q using a VTK cell locator.
+    Only intended for localized potentials.
+    """
+
+    if not localized:
+        raise ValueError("smoothed_offset_potential_accelerated requires localized=True.")
+
+    try:
+        import vtk
+        from vtk.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
+    except ImportError as exc:
+        raise ImportError("vtk is required for accelerated potential.") from exc
+
+    q = np.asarray(q, dtype=float)
+    if q.ndim == 1:
+        q = q[None, :]
+    if q.ndim != 2 or q.shape[1] != 3:
+        raise ValueError("q must have shape (3,) or (nq, 3).")
+
+    V = np.asarray(mesh.V, dtype=np.float64)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    if faces.ndim != 2 or faces.shape[1] != 3:
+        raise ValueError("faces must have shape (nf, 3).")
+
+    vtk_faces = np.empty((faces.shape[0], 4), dtype=np.int64)
+    vtk_faces[:, 0] = 3
+    vtk_faces[:, 1:] = faces
+    vtk_faces = vtk_faces.ravel()
+
+    points = vtk.vtkPoints()
+    points.SetData(numpy_to_vtk(V, deep=True))
+    poly = vtk.vtkPolyData()
+    poly.SetPoints(points)
+
+    cells = vtk.vtkCellArray()
+    cell_ids = numpy_to_vtkIdTypeArray(vtk_faces, deep=True)
+    cells.SetCells(faces.shape[0], cell_ids)
+    poly.SetPolys(cells)
+
+    locator = vtk.vtkStaticCellLocator()
+    locator.SetDataSet(poly)
+    locator.BuildLocator()
+
+    id_list = vtk.vtkIdList()
+    id_list.Allocate(faces.shape[0])
+    closest_point = [0.0, 0.0, 0.0]
+    cell_id = vtk.reference(0)
+    sub_id = vtk.reference(0)
+    dist2 = vtk.reference(0.0)
+
+    conn = _build_numba_connectivity(mesh)
+    pointed_vertices = np.asarray(geom.pointed_vertices, dtype=np.bool_)
+    params = PotentialParameters(alpha, p, epsilon, True, one_sided)
+    nq = q.shape[0]
+    out = np.zeros(nq, dtype=np.float64)
+    for i in range(nq):
+        has_close = locator.FindClosestPointWithinRadius(
+            q[i], epsilon, closest_point, cell_id, sub_id, dist2
+        )
+        if has_close == 0:
+            out[i] = 0.0
+            continue
+        bounds = [
+            q[i, 0] - epsilon, q[i, 0] + epsilon,
+            q[i, 1] - epsilon, q[i, 1] + epsilon,
+            q[i, 2] - epsilon, q[i, 2] + epsilon,
+        ]
+        id_list.Reset()
+        locator.FindCellsWithinBounds(bounds, id_list)
+        count = id_list.GetNumberOfIds()
+        if count == 0:
+            out[i] = 0.0
+            continue
+        face_indices = np.empty(count, dtype=np.int64)
+        for j in range(count):
+            face_indices[j] = id_list.GetId(j)
         out[i] = smoothed_offset_potential_point(
             q[i], face_indices,
             conn, pointed_vertices,

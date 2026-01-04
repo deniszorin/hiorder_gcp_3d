@@ -27,10 +27,24 @@ Eigen::VectorXd smoothed_offset_potential(
     const PotentialParameters& params,
     bool include_faces, bool include_edges, bool include_vertices);
 
+Eigen::VectorXd smoothed_offset_potential_accelerated(
+    Eigen::ConstRef<Eigen::MatrixXd> q,
+    const PotentialCollisionMesh& mesh,
+    const PotentialParameters& params,
+    bool include_faces, bool include_edges, bool include_vertices);
+
 // This version is for compatibility with python interface plotting in particular 
 // builds PotentialCollisionMesh from (V,F)
 // consider packing parameters into json
 Eigen::VectorXd smoothed_offset_potential_cpp(
+    Eigen::ConstRef<Eigen::MatrixXd> q,
+    Eigen::ConstRef<Eigen::MatrixXd> V,
+    Eigen::ConstRef<Eigen::MatrixXi> F,
+    double alpha, double p, double epsilon,
+    bool include_faces, bool include_edges, bool include_vertices,
+    bool localized, bool one_sided);
+
+Eigen::VectorXd smoothed_offset_potential_accelerated_cpp(
     Eigen::ConstRef<Eigen::MatrixXd> q,
     Eigen::ConstRef<Eigen::MatrixXd> V,
     Eigen::ConstRef<Eigen::MatrixXi> F,

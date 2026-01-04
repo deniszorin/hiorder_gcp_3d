@@ -12,6 +12,16 @@ def _sample_mesh_grid(mesh, resolution):
     return viz.sample_volume_grid(bounds_min, bounds_max, resolution=resolution)
 
 
+def _bounding_box_size(mesh):
+    bounds_min = mesh.V.min(axis=0)
+    bounds_max = mesh.V.max(axis=0)
+    return float(np.max(bounds_max - bounds_min))
+
+
+def _ensure_cpp_extension():
+    potential_cpp._build_extension()
+
+
 def _cpp_vs_numba(q, mesh, one_sided=False):
     geom = geometry.precompute_mesh_geometry(mesh)
     ref = potential_numba.smoothed_offset_potential_numba(
@@ -92,3 +102,57 @@ def test_smoothed_offset_potential_cpp_flipped_normals():
         mesh = scene.mesh
         q = _sample_mesh_grid(mesh, resolution=10)
         _cpp_vs_numba(q, mesh, one_sided=scene.one_sided)
+
+
+def test_smoothed_offset_potential_cpp_localized_matches_numba_three_meshes():
+    _ensure_cpp_extension()
+    scenes = viz.build_validation_scene_specs()
+    for scene in scenes[:3]:
+        mesh = scene.mesh
+        geom = geometry.precompute_mesh_geometry(mesh)
+        q = _sample_mesh_grid(mesh, resolution=10)
+        epsilon = 0.1 * _bounding_box_size(mesh)
+        ref = potential_numba.smoothed_offset_potential_numba(
+            q,
+            mesh,
+            geom,
+            epsilon=epsilon,
+            localized=True,
+            one_sided=scene.one_sided,
+        )
+        cpp_vals = potential_cpp.smoothed_offset_potential_cpp(
+            q,
+            mesh.V,
+            mesh.faces,
+            epsilon=epsilon,
+            localized=True,
+            one_sided=scene.one_sided,
+        )
+        np.testing.assert_allclose(cpp_vals, ref, rtol=1e-6, atol=1e-6)
+
+
+def test_smoothed_offset_potential_cpp_accelerated_matches_numba_three_meshes():
+    _ensure_cpp_extension()
+    scenes = viz.build_validation_scene_specs()
+    for scene in scenes[:3]:
+        mesh = scene.mesh
+        geom = geometry.precompute_mesh_geometry(mesh)
+        q = _sample_mesh_grid(mesh, resolution=10)
+        epsilon = 0.1 * _bounding_box_size(mesh)
+        ref = potential_numba.smoothed_offset_potential_numba(
+            q,
+            mesh,
+            geom,
+            epsilon=epsilon,
+            localized=True,
+            one_sided=scene.one_sided,
+        )
+        cpp_vals = potential_cpp.smoothed_offset_potential_accelerated_cpp(
+            q,
+            mesh.V,
+            mesh.faces,
+            epsilon=epsilon,
+            localized=True,
+            one_sided=scene.one_sided,
+        )
+        np.testing.assert_allclose(cpp_vals, ref, rtol=1e-6, atol=1e-6)
