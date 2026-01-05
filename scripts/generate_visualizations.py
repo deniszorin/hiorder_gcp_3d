@@ -22,6 +22,44 @@ def main() -> None:
         default="visualizations",
         help="Directory to write output images (or HTML fallback).",
     )
+    parser.add_argument(
+        "--use-cpp",
+        action="store_true",
+        help="Use C++ potential evaluation in isosurface plots.",
+    )
+    parser.add_argument(
+        "--use-accelerated",
+        action="store_true",
+        help="Use accelerated evaluation in isosurface plots.",
+    )
+    parser.add_argument(
+        "--use-simplified",
+        action="store_true",
+        help="Use simplified potential in isosurface plots.",
+    )
+    parser.add_argument(
+        "--localized",
+        action="store_true",
+        help="Enable localization in isosurface plots.",
+    )
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=0.1,
+        help="Localization epsilon for isosurface plots.",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.1,
+        help="Heaviside smoothing alpha for isosurface plots.",
+    )
+    parser.add_argument(
+        "--p",
+        type=float,
+        default=2.0,
+        help="Potential exponent p for isosurface plots.",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -29,7 +67,16 @@ def main() -> None:
     mpl_dir = Path(__file__).resolve().parent.parent / ".mpl"
     mpl_dir.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("MPLCONFIGDIR", str(mpl_dir))
-    run_validation_visualizations(output_dir=str(output_dir))
+    run_validation_visualizations(
+        output_dir=str(output_dir),
+        use_cpp=args.use_cpp,
+        use_accelerated=args.use_accelerated,
+        use_simplified=args.use_simplified,
+        localized=args.localized,
+        epsilon=args.epsilon,
+        alpha=args.alpha,
+        p=args.p,
+    )
 
     try:
         from viz import build_validation_scene_specs

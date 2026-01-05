@@ -20,22 +20,13 @@ Eigen::VectorXd smoothed_offset_potential(
     const PotentialParameters& params,
     bool include_faces, bool include_edges, bool include_vertices);
 
+#if defined(IPC_HAS_VTK)
+/// accelerated versions of the same using VTK
 Eigen::VectorXd smoothed_offset_potential_accelerated(
     Eigen::ConstRef<Eigen::MatrixXd> q,
     const PotentialCollisionMesh& mesh,
     const PotentialParameters& params,
     bool include_faces, bool include_edges, bool include_vertices);
-
-// This version is for compatibility with python interface plotting in particular 
-// builds PotentialCollisionMesh from (V,F)
-// consider packing parameters into json
-Eigen::VectorXd smoothed_offset_potential_cpp(
-    Eigen::ConstRef<Eigen::MatrixXd> q,
-    Eigen::ConstRef<Eigen::MatrixXd> V,
-    Eigen::ConstRef<Eigen::MatrixXi> F,
-    double alpha, double p, double epsilon,
-    bool include_faces, bool include_edges, bool include_vertices,
-    bool localized, bool one_sided);
 
 Eigen::VectorXd smoothed_offset_potential_accelerated_cpp(
     Eigen::ConstRef<Eigen::MatrixXd> q,
@@ -45,7 +36,28 @@ Eigen::VectorXd smoothed_offset_potential_accelerated_cpp(
     bool include_faces, bool include_edges, bool include_vertices,
     bool localized, bool one_sided);
 
-//  point/face, point/edge, point/vertex, just potential 
+#endif
+
+// Compute the potential at a single point, the other argumetns are the same as above
+double smoothed_offset_potential_point(
+    const Eigen::Vector3d& q, const std::vector<int>& face_indices,
+    const PotentialCollisionMesh& mesh,
+    const PotentialParameters& params,
+    bool include_faces, bool include_edges, bool include_vertices);
+
+// This version is for compatibility with python interface visualization in particular 
+// builds PotentialCollisionMesh from (V,F)
+// potential parameters not packed into a structure for binding simplicity
+Eigen::VectorXd smoothed_offset_potential_cpp(
+    Eigen::ConstRef<Eigen::MatrixXd> q,
+    Eigen::ConstRef<Eigen::MatrixXd> V,
+    Eigen::ConstRef<Eigen::MatrixXi> F,
+    double alpha, double p, double epsilon,
+    bool include_faces, bool include_edges, bool include_vertices,
+    bool localized, bool one_sided);
+
+
+//  point/face, point/edge, point/vertex
 
 // face_points: 3 vertex positions
 double potential_face(
@@ -92,7 +104,7 @@ void potential_edge_grad_hess(
     Eigen::VectorXd& grad,
     Eigen::MatrixXd& hess);
 
-// grad/hessian order:  5 * 3 xyzxyz... order corresponds to  q, edge_points[0]..edge_points[3]
+// grad/hessian order:  5 * 3 xyzxyz... order corresponds to  q, neightbor_points[0]..neightbor_points[k-1]
 void potential_vertex_grad_hess(
     const Eigen::Vector3d& q, const Eigen::Vector3d& p_v,
     Eigen::ConstRef<Eigen::MatrixXd> neighbor_points, bool is_boundary,

@@ -11,8 +11,9 @@ namespace ipc {
 
 /// @brief A minimal collision mesh for triangle or edge meshes.
 /// stripped down version of the structure from ipc_toolkit 
-/// to minimize dependencies/potential issues. 
-/// main parts removed: everything related to the full <-> collision mesh maps 
+/// to minimize dependencies.
+/// main parts removed: 
+///  everything related to the full <-> collision mesh maps 
 ///  geometry computations (only positions are stored)
 ///  everything related to codimensional edges and vertices
 

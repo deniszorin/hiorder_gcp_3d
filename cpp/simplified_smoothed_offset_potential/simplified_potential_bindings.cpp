@@ -53,6 +53,7 @@ PYBIND11_MODULE(_simplified_potential_cpp, m)
         py::arg("one_sided") = false,
         "Compute simplified potential using the C++ implementation.");
 
+#if defined(IPC_HAS_VTK)
     m.def(
         "simplified_smoothed_offset_potential_accelerated_cpp",
         [](
@@ -92,6 +93,7 @@ PYBIND11_MODULE(_simplified_potential_cpp, m)
         py::arg("localized") = false,
         py::arg("one_sided") = false,
         "Compute simplified potential using the C++ accelerated implementation.");
+#endif
 
     m.def(
         "simplified_smoothed_offset_potential_cpp_tinyad",

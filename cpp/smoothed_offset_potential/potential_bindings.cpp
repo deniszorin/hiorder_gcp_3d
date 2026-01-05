@@ -64,6 +64,7 @@ PYBIND11_MODULE(_potential_cpp, m)
         py::arg("one_sided") = false,
         "Compute smoothed offset potential using the C++ implementation.");
 
+#if defined(IPC_HAS_VTK)
     m.def(
         "smoothed_offset_potential_accelerated_cpp",
         [](
@@ -103,6 +104,7 @@ PYBIND11_MODULE(_potential_cpp, m)
         py::arg("localized") = false,
         py::arg("one_sided") = false,
         "Compute smoothed offset potential using the C++ accelerated implementation.");
+#endif
 
     m.def(
         "pointed_vertices_cpp",

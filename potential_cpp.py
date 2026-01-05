@@ -125,7 +125,11 @@ def smoothed_offset_potential_accelerated_cpp(
     include_faces: bool = True, include_edges: bool = True, include_vertices: bool = True,
     localized: bool = False, one_sided: bool = False,
 ) -> np.ndarray:
-    module = _load_extension(required=("smoothed_offset_potential_accelerated_cpp",))
+    module = _load_extension()
+    if not hasattr(module, "smoothed_offset_potential_accelerated_cpp"):
+        raise RuntimeError(
+            "C++ module was built without VTK support; accelerated potential is unavailable."
+        )
     return module.smoothed_offset_potential_accelerated_cpp(
         q, V, F,
         alpha, p, epsilon,
@@ -159,9 +163,11 @@ def simplified_smoothed_offset_potential_accelerated_cpp(
     include_faces: bool = True, include_edges: bool = True, include_vertices: bool = True,
     localized: bool = False, one_sided: bool = False,
 ) -> np.ndarray:
-    module = _load_simplified_extension(
-        required=("simplified_smoothed_offset_potential_accelerated_cpp",),
-    )
+    module = _load_simplified_extension()
+    if not hasattr(module, "simplified_smoothed_offset_potential_accelerated_cpp"):
+        raise RuntimeError(
+            "C++ module was built without VTK support; accelerated simplified potential is unavailable."
+        )
     return module.simplified_smoothed_offset_potential_accelerated_cpp(
         q, V, F,
         alpha, p, epsilon,

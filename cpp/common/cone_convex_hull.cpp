@@ -92,6 +92,9 @@ bool would_create_opposite_pair_head(
 
 } // namespace
 
+// This is an adaptaton of Melkman's algorithm for polygon convex hull to 
+// 3D polyhedral cone convex hull.  The algorithm is largely the same, 
+
 ConeHullResult cone_convex_hull(
     const std::vector<Eigen::Vector3d>& e,
     double /*eps*/)
@@ -233,6 +236,9 @@ bool validate_cone_convex_hull(
     }
     return true;
 }
+
+/// Determine if the cone formed by the given edge directions with given outside normals is pointed, i.e., has a convex hull 
+/// that is not a full space, containing it in its interior, that is not a full space.   
 
 bool pointed_vertex(
     const std::vector<Eigen::Vector3d>& e,

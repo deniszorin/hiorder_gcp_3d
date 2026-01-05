@@ -10,11 +10,19 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
-find_package(VTK REQUIRED COMPONENTS CommonCore CommonDataModel)
+find_package(VTK QUIET COMPONENTS CommonCore CommonDataModel)
 
 set(COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set(SMOOTHED_DIR ${CMAKE_CURRENT_SOURCE_DIR}/smoothed_offset_potential)
 set(SIMPLIFIED_DIR ${CMAKE_CURRENT_SOURCE_DIR}/simplified_smoothed_offset_potential)
+
+set(VTK_SOURCES "")
+if(VTK_FOUND)
+    list(APPEND VTK_SOURCES
+        ${SMOOTHED_DIR}/potential_vtk.cpp
+        ${SIMPLIFIED_DIR}/simplified_potential_vtk.cpp
+    )
+endif()
 
 execute_process(
     COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
@@ -72,6 +80,7 @@ add_library(potential_core STATIC
     ${SMOOTHED_DIR}/potential_tinyad.cpp
     ${SIMPLIFIED_DIR}/simplified_potential.cpp
     ${SIMPLIFIED_DIR}/simplified_potential_tinyad.cpp
+    ${VTK_SOURCES}
 )
 
 target_include_directories(potential_core PUBLIC
@@ -87,9 +96,15 @@ target_link_libraries(potential_core PUBLIC
     collision_mesh
     cone_convex_hull
     Eigen3::Eigen
-    VTK::CommonCore
-    VTK::CommonDataModel
 )
+
+if(VTK_FOUND)
+    target_link_libraries(potential_core PUBLIC
+        VTK::CommonCore
+        VTK::CommonDataModel
+    )
+    target_compile_definitions(potential_core PUBLIC IPC_HAS_VTK)
+endif()
 
 add_library(_potential_cpp MODULE
     ${SMOOTHED_DIR}/potential_bindings.cpp

@@ -196,6 +196,7 @@ def isolines_with_clip(
     include_vertices: bool = True,
     alpha: float = 0.1,
     p: float = 2.0,
+    epsilon: float = 0.1,
     localized: bool = False,
     use_numba: bool = False,
     use_cpp: bool = False,
@@ -299,6 +300,7 @@ def isolines_with_clip(
                     q_plane, mesh, geom,
                     alpha=alpha,
                     p=p,
+                    epsilon=epsilon,
                     localized=localized,
                     include_faces=include_faces,
                     include_edges=include_edges,
@@ -310,6 +312,7 @@ def isolines_with_clip(
                     q_plane, mesh, geom,
                     alpha=alpha,
                     p=p,
+                    epsilon=epsilon,
                     localized=localized,
                     include_faces=include_faces,
                     include_edges=include_edges,
@@ -323,6 +326,7 @@ def isolines_with_clip(
                 geom,
                 alpha=alpha,
                 p=p,
+                epsilon=epsilon,
                 localized=localized,
                 include_faces=include_faces,
                 include_edges=include_edges,
@@ -478,6 +482,7 @@ def isosurface_with_clip(
     include_vertices: bool = True,
     alpha: float = 0.1,
     p: float = 2.0,
+    epsilon: float = 0.1,
     localized: bool = False,
     use_numba: bool = False,
     use_cpp: bool = False,
@@ -520,6 +525,7 @@ def isosurface_with_clip(
                 points, mesh, geom,
                 alpha=alpha,
                 p=p,
+                epsilon=epsilon,
                 localized=localized,
                 include_faces=include_faces,
                 include_edges=include_edges,
@@ -531,6 +537,7 @@ def isosurface_with_clip(
                 points, mesh, geom,
                 alpha=alpha,
                 p=p,
+                epsilon=epsilon,
                 localized=localized,
                 include_faces=include_faces,
                 include_edges=include_edges,
@@ -544,6 +551,7 @@ def isosurface_with_clip(
             geom,
             alpha=alpha,
             p=p,
+            epsilon=epsilon,
             localized=localized,
             include_faces=include_faces,
             include_edges=include_edges,
@@ -894,7 +902,17 @@ def build_validation_scenes(reverse_faces=False) -> List[MeshData]:
     return [scene.mesh for scene in build_validation_scene_specs(reverse_faces=reverse_faces)]
 
 
-def run_validation_visualizations(output_dir: Optional[str] = None,reverse_faces=False) -> None:
+def run_validation_visualizations(
+    output_dir: Optional[str] = None,
+    reverse_faces: bool = False,
+    use_cpp: bool = False,
+    use_accelerated: bool = False,
+    use_simplified: bool = False,
+    localized: bool = False,
+    epsilon: float = 0.1,
+    alpha: float = 0.1,
+    p: float = 2.0,
+) -> None:
     """Generate all described visualizations for validation."""
 
     from geometry import precompute_mesh_geometry
@@ -946,6 +964,13 @@ def run_validation_visualizations(output_dir: Optional[str] = None,reverse_faces
             include_faces=True,
             include_edges=True,
             include_vertices=True,
+            alpha=alpha,
+            p=p,
+            epsilon=epsilon,
+            localized=localized,
+            use_cpp=use_cpp,
+            use_accelerated=use_accelerated,
+            use_simplified=use_simplified,
             show_mesh=False,
             use_widget=False,
             clip_origin=center,
