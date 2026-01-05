@@ -1,4 +1,4 @@
-#include "potential_cpp.hpp"
+#include "potential.hpp"
 #include "potential_impl.hpp"
 
 #include <array>
@@ -17,69 +17,6 @@
 namespace ipc {
 
 namespace {
-
-inline Eigen::Vector3d vertex_position(const PotentialCollisionMesh& mesh, const int idx)
-{
-    return mesh.rest_positions().row(idx).transpose();
-}
-
-// ****************************************************************************
-// Helpers for local to global and back vertex/edge index conversion
-
-int find_local_edge(const PotentialCollisionMesh& mesh, const int fidx, const int edge_idx)
-{
-    const Eigen::MatrixXi& face_edges = mesh.faces_to_edges();
-    for (int i = 0; i < face_edges.cols(); i++) {
-        if (face_edges(fidx, i) == edge_idx) {
-            return i;
-        }
-    }
-    throw std::runtime_error("Edge not found in face.");
-}
-
-
-// ****************************************************************************
-// Helper to extract unique edge and vertex lists from a face list
-
-void get_vertices_and_edges(
-    const std::vector<int>& face_indices, const PotentialCollisionMesh& mesh,
-    std::vector<int>& edge_list, std::vector<int>& vertex_list)
-{
-    // Go over the list of faces, extract edges and faces,
-    // place them in lists of unique edges and faces; not using sets to keep this numba-compatible
-    std::vector<char> edge_mark(mesh.num_edges(), 0);
-    std::vector<char> vertex_mark(mesh.num_vertices(), 0);
-
-    edge_list.clear();
-    vertex_list.clear();
-    edge_list.reserve(mesh.num_edges());
-    vertex_list.reserve(mesh.num_vertices());
-
-    for (const int fidx : face_indices) {
-        for (int i = 0; i < 3; i++) {
-            const int edge_idx = mesh.faces_to_edges()(fidx, i);
-            if (!edge_mark[edge_idx]) {
-                edge_mark[edge_idx] = 1;
-                edge_list.push_back(edge_idx);
-            }
-        }
-        const int v0 = mesh.faces()(fidx, 0);
-        const int v1 = mesh.faces()(fidx, 1);
-        const int v2 = mesh.faces()(fidx, 2);
-        if (!vertex_mark[v0]) {
-            vertex_mark[v0] = 1;
-            vertex_list.push_back(v0);
-        }
-        if (!vertex_mark[v1]) {
-            vertex_mark[v1] = 1;
-            vertex_list.push_back(v1);
-        }
-        if (!vertex_mark[v2]) {
-            vertex_mark[v2] = 1;
-            vertex_list.push_back(v2);
-        }
-    }
-}
 
 double smoothed_offset_potential_point_impl(
     const Eigen::Vector3d& q, const std::vector<int>& face_indices,

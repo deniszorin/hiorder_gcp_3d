@@ -35,6 +35,7 @@ def simplified_potential_face(
     return I_f
 
 
+# Only needs edge endpoints, compared to smoooth offset potential which needs also opposite
 @njit(cache=True)
 def simplified_potential_edge(
     q: ArrayF, edge_points: ArrayF,
@@ -53,6 +54,7 @@ def simplified_potential_edge(
     return I_e
 
 
+# only neeeds the vertex position itself,  does not need incident vertices like smoothed offset
 @njit(cache=True)
 def simplified_potential_vertex(
     q: ArrayF, p_v: ArrayF,

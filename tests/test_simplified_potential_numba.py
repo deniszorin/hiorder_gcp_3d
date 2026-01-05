@@ -2,6 +2,7 @@ import numpy as np
 
 import geometry
 import potential
+import potential_cpp
 import simplified_potential_numba
 import viz
 
@@ -272,3 +273,61 @@ def test_simplified_potential_numba_tetrahedron_matches_formula():
     )
 
     _assert_match(ref, simplified)
+
+
+def _simplified_cpp_values(q, mesh):
+    return potential_cpp.simplified_smoothed_offset_potential_cpp(
+        q, mesh.V, mesh.faces,
+        alpha=0.0,
+        localized=False,
+        one_sided=False,
+    )
+
+
+def _simplified_cpp_tinyad_values(q, mesh):
+    values = np.zeros(q.shape[0], dtype=float)
+    for i in range(q.shape[0]):
+        value, _grad = potential_cpp.simplified_smoothed_offset_potential_cpp_tinyad(
+            q[i], mesh.V, mesh.faces,
+            alpha=0.0,
+            localized=False,
+            one_sided=False,
+        )
+        values[i] = value
+    return values
+
+
+def test_simplified_potential_cpp_matches_numba():
+    meshes = [_mesh_single_triangle(), _mesh_two_faces(), _mesh_tetrahedron()]
+    meshes.extend(scene.mesh for scene in viz.build_validation_scene_specs())
+    for mesh in meshes:
+        geom = geometry.precompute_mesh_geometry(mesh)
+        q = _sample_mesh_grid(mesh, resolution=6)
+
+        ref = simplified_potential_numba.simplified_smoothed_offset_potential_numba(
+            q, mesh, geom,
+            alpha=0.0,
+            localized=False,
+            one_sided=False,
+        )
+        cpp_vals = _simplified_cpp_values(q, mesh)
+
+        _assert_match(ref, cpp_vals)
+
+
+def test_simplified_potential_cpp_tinyad_matches_numba():
+    meshes = [_mesh_single_triangle(), _mesh_two_faces(), _mesh_tetrahedron()]
+    meshes.extend(scene.mesh for scene in viz.build_validation_scene_specs())
+    for mesh in meshes:
+        geom = geometry.precompute_mesh_geometry(mesh)
+        q = _sample_mesh_grid(mesh, resolution=6)
+
+        ref = simplified_potential_numba.simplified_smoothed_offset_potential_numba(
+            q, mesh, geom,
+            alpha=0.0,
+            localized=False,
+            one_sided=False,
+        )
+        cpp_vals = _simplified_cpp_tinyad_values(q, mesh)
+
+        _assert_match(ref, cpp_vals)

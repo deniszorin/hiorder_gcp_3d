@@ -1,4 +1,4 @@
-#include "../collision_mesh.hpp"
+#include "collision_mesh.hpp"
 
 #include <Eigen/Core>
 #include <cassert>

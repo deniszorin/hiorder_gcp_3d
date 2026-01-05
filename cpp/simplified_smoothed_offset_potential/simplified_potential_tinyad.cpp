@@ -1,4 +1,5 @@
 #include "potential_impl.hpp"
+#include "simplified_potential_impl.hpp"
 
 #include <TinyAD/Scalar.hh>
 
@@ -50,7 +51,7 @@ inline EdgePointsT<F> cast_edge_points(const EdgePoints& edge_points)
 
 } // namespace
 
-std::pair<double, Eigen::Vector3d> potential_face_cpp_tinyad(
+std::pair<double, Eigen::Vector3d> simplified_potential_face_cpp_tinyad(
     const Eigen::Vector3d& q,
     const Eigen::Matrix<double, 3, 3>& face_points,
     const PotentialParameters& params)
@@ -59,51 +60,164 @@ std::pair<double, Eigen::Vector3d> potential_face_cpp_tinyad(
     const FacePoints face = face_points_from_rows(face_points);
     const FacePointsT<AD> face_ad = cast_face_points<AD>(face);
     const Vector3<AD> q_ad = AD::make_active({q[0], q[1], q[2]});
-    const AD value_ad = potential_face(q_ad, face_ad, params);
+    const AD value_ad = simplified_potential_face(q_ad, face_ad, params);
     return std::make_pair(TinyAD::to_passive(value_ad), value_ad.grad);
 }
 
-std::pair<double, Eigen::Vector3d> potential_edge_cpp_tinyad(
+std::pair<double, Eigen::Vector3d> simplified_potential_edge_cpp_tinyad(
     const Eigen::Vector3d& q,
-    const Eigen::Matrix<double, 4, 3>& edge_points,
-    const bool has_f1,
+    const Eigen::Matrix<double, 2, 3>& edge_points,
     const PotentialParameters& params)
 {
     using AD = TinyAD::Scalar<3, double, false>;
-    const EdgePoints edge_points_arr = edge_points_from_rows(edge_points);
-    const EdgePointsT<AD> edge_ad = cast_edge_points<AD>(edge_points_arr);
+    const Vector3<AD> p0_ad = cast_vec3<AD>(edge_points.row(0).transpose());
+    const Vector3<AD> p1_ad = cast_vec3<AD>(edge_points.row(1).transpose());
     const Vector3<AD> q_ad = AD::make_active({q[0], q[1], q[2]});
-    const AD value_ad =
-        potential_edge(q_ad, edge_ad, has_f1, params);
+    const AD value_ad = simplified_potential_edge(q_ad, p0_ad, p1_ad, params);
     return std::make_pair(TinyAD::to_passive(value_ad), value_ad.grad);
 }
 
-std::pair<double, Eigen::Vector3d> potential_vertex_cpp_tinyad(
+std::pair<double, Eigen::Vector3d> simplified_potential_vertex_cpp_tinyad(
     const Eigen::Vector3d& q, const Eigen::Vector3d& p_v,
-    Eigen::ConstRef<Eigen::MatrixXd> neighbor_points, const bool is_boundary,
-    const bool pointed_vertex,
     const PotentialParameters& params)
 {
-    if (neighbor_points.cols() != 3) {
-        throw std::runtime_error("neighbor_points must have shape (k, 3).");
-    }
-    if (neighbor_points.rows() > 50) {
-        throw std::runtime_error("Vertex has more than 50 incident edges.");
-    }
     using AD = TinyAD::Scalar<3, double, false>;
-    std::vector<Vector3<AD>> neighbor_list;
-    neighbor_list.reserve(neighbor_points.rows());
-    for (int i = 0; i < neighbor_points.rows(); i++) {
-        neighbor_list.push_back(cast_vec3<AD>(neighbor_points.row(i).transpose()));
-    }
     const Vector3<AD> q_ad = AD::make_active({q[0], q[1], q[2]});
     const Vector3<AD> p_v_ad = cast_vec3<AD>(p_v);
-    const AD value_ad = potential_vertex(
-        q_ad, p_v_ad,
-        neighbor_list.data(), static_cast<int>(neighbor_list.size()), is_boundary,
-        pointed_vertex,
-        params);
+    const AD value_ad = simplified_potential_vertex(q_ad, p_v_ad, params);
     return std::make_pair(TinyAD::to_passive(value_ad), value_ad.grad);
+}
+
+void simplified_potential_face_grad_hess(
+    const Eigen::Vector3d& q,
+    const Eigen::Matrix<double, 3, 3>& face_points,
+    const PotentialParameters& params,
+    Eigen::VectorXd& grad,
+    Eigen::MatrixXd& hess)
+{
+    using AD = TinyAD::Scalar<12, double, true>;
+    constexpr int kPointSize = 3;
+    constexpr int nvars = (1 + 3) * kPointSize;
+    Eigen::VectorXd passive(nvars);
+    passive.segment<kPointSize>(0) = q;
+    passive.segment<kPointSize>(3) = face_points.row(0).transpose();
+    passive.segment<kPointSize>(6) = face_points.row(1).transpose();
+    passive.segment<kPointSize>(9) = face_points.row(2).transpose();
+
+    const auto active = AD::make_active(passive);
+    const Vector3<AD> q_ad = active.segment<kPointSize>(0);
+    const FacePointsT<AD> face_ad = {
+        active.segment<kPointSize>(3),
+        active.segment<kPointSize>(6),
+        active.segment<kPointSize>(9),
+    };
+
+    const AD value_ad = simplified_potential_face(q_ad, face_ad, params);
+    grad = value_ad.grad;
+    hess = value_ad.Hess;
+}
+
+void simplified_potential_edge_grad_hess(
+    const Eigen::Vector3d& q,
+    const Eigen::Matrix<double, 2, 3>& edge_points,
+    const PotentialParameters& params,
+    Eigen::VectorXd& grad,
+    Eigen::MatrixXd& hess)
+{
+    using AD = TinyAD::Scalar<9, double, true>;
+    constexpr int kPointSize = 3;
+    constexpr int nvars = (1 + 2) * kPointSize;
+    Eigen::VectorXd passive(nvars);
+    passive.segment<kPointSize>(0) = q;
+    passive.segment<kPointSize>(3) = edge_points.row(0).transpose();
+    passive.segment<kPointSize>(6) = edge_points.row(1).transpose();
+
+    const auto active = AD::make_active(passive);
+    const Vector3<AD> q_ad = active.segment<kPointSize>(0);
+    const Vector3<AD> p0_ad = active.segment<kPointSize>(3);
+    const Vector3<AD> p1_ad = active.segment<kPointSize>(6);
+
+    const AD value_ad = simplified_potential_edge(q_ad, p0_ad, p1_ad, params);
+    grad = value_ad.grad;
+    hess = value_ad.Hess;
+}
+
+void simplified_potential_vertex_grad_hess(
+    const Eigen::Vector3d& q, const Eigen::Vector3d& p_v,
+    const PotentialParameters& params,
+    Eigen::VectorXd& grad,
+    Eigen::MatrixXd& hess)
+{
+    using AD = TinyAD::Scalar<6, double, true>;
+    constexpr int kPointSize = 3;
+    constexpr int nvars = 2 * kPointSize;
+    Eigen::VectorXd passive(nvars);
+    passive.segment<kPointSize>(0) = q;
+    passive.segment<kPointSize>(3) = p_v;
+
+    const auto active = AD::make_active(passive);
+    const Vector3<AD> q_ad = active.segment<kPointSize>(0);
+    const Vector3<AD> p_v_ad = active.segment<kPointSize>(3);
+
+    const AD value_ad = simplified_potential_vertex(q_ad, p_v_ad, params);
+    grad = value_ad.grad;
+    hess = value_ad.Hess;
+}
+
+std::pair<double, Eigen::Vector3d> simplified_smoothed_offset_potential_cpp_tinyad(
+    const Eigen::Vector3d& q,
+    const PotentialCollisionMesh& mesh,
+    const PotentialParameters& params,
+    const bool include_faces, const bool include_edges, const bool include_vertices)
+{
+    using AD = TinyAD::Scalar<3, double, false>;
+    const Vector3<AD> q_ad = AD::make_active({q[0], q[1], q[2]});
+
+    std::vector<int> face_indices(static_cast<size_t>(mesh.num_faces()));
+    for (int i = 0; i < mesh.faces().rows(); i++) {
+        face_indices[static_cast<size_t>(i)] = i;
+    }
+    std::vector<int> edge_list;
+    std::vector<int> vertex_list;
+    get_vertices_and_edges(
+        face_indices, mesh,
+        edge_list, vertex_list);
+
+    const std::vector<int> edge_valence = build_edge_valence(mesh);
+    const std::vector<char> vertex_internal = build_vertex_internal(mesh);
+
+    const AD value_ad = simplified_smoothed_offset_potential_point_impl<AD>(
+        q_ad, face_indices,
+        edge_list, vertex_list,
+        mesh,
+        params,
+        edge_valence,
+        vertex_internal,
+        include_faces, include_edges, include_vertices);
+    return std::make_pair(TinyAD::to_passive(value_ad), value_ad.grad);
+}
+
+std::pair<double, Eigen::Vector3d> simplified_smoothed_offset_potential_cpp_tinyad(
+    const Eigen::Vector3d& q,
+    Eigen::ConstRef<Eigen::MatrixXd> V,
+    Eigen::ConstRef<Eigen::MatrixXi> F,
+    double alpha, double p, double epsilon,
+    bool include_faces, bool include_edges, bool include_vertices,
+    bool localized, bool one_sided)
+{
+    PotentialCollisionMesh mesh(V, F);
+    const PotentialParameters params{
+        alpha,
+        p,
+        epsilon,
+        localized,
+        one_sided,
+    };
+    return simplified_smoothed_offset_potential_cpp_tinyad(
+        q,
+        mesh,
+        params,
+        include_faces, include_edges, include_vertices);
 }
 
 void potential_face_grad_hess(

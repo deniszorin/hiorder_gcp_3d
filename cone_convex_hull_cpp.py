@@ -59,8 +59,8 @@ def _build_predicates_library(build_dir: Path, src: Path) -> Path:
 
 def _extension_sources(cpp_dir: Path) -> list[Path]:
     return [
-        cpp_dir / "cone_convex_hull.cpp",
-        cpp_dir / "cone_convex_hull_cpp.cpp",
+        cpp_dir / "common" / "cone_convex_hull.cpp",
+        cpp_dir / "common" / "cone_convex_hull_bindings.cpp",
     ]
 
 
@@ -80,6 +80,7 @@ def _build_extension() -> Path:
 
     include_dirs = [
         str(cpp_dir),
+        str(cpp_dir / "common"),
         pybind11.get_include(),
         np.get_include(),
     ]

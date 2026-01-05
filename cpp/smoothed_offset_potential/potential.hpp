@@ -1,20 +1,13 @@
 #pragma once
 
 #include "potential_collision_mesh.hpp"
+#include "potential_parameters.hpp"
 
 #include <Eigen/Dense>
 #include <utility>
 #include <vector>
 
 namespace ipc {
-
-struct PotentialParameters {
-    double alpha;
-    double p;
-    double epsilon;
-    bool localized;
-    bool one_sided;
-};
 
 // Compute potential from a mesh at points in the array q.
 // mesh:  connectivity and vertex positions

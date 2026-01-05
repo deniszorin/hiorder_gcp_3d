@@ -41,13 +41,12 @@ def _is_multi_config(build_dir: Path) -> bool:
     return "CMAKE_CONFIGURATION_TYPES" in contents
 
 
-def _build_extension() -> Path:
+def _build_extension(name: str = "_potential_cpp") -> Path:
     root = Path(__file__).resolve().parent
     cpp_dir = root / "cpp"
     build_dir = cpp_dir / "build"
     build_dir.mkdir(parents=True, exist_ok=True)
 
-    name = "_potential_cpp"
     ext_path = _extension_path(build_dir, name)
     _configure_cmake(cpp_dir, build_dir)
 
@@ -61,16 +60,19 @@ def _build_extension() -> Path:
     return ext_path
 
 
-def _load_extension(required: tuple[str, ...] | None = None):
+def _load_extension(
+    module_name: str = "_potential_cpp",
+    required: tuple[str, ...] | None = None,
+):
     root = Path(__file__).resolve().parent
     cpp_dir = root / "cpp"
     build_dir = cpp_dir / "build"
-    ext_path = _extension_path(build_dir, "_potential_cpp")
+    ext_path = _extension_path(build_dir, module_name)
     if not ext_path.exists():
-        ext_path = _build_extension()
+        ext_path = _build_extension(module_name)
 
     def _load():
-        spec = importlib.util.spec_from_file_location("_potential_cpp", ext_path)
+        spec = importlib.util.spec_from_file_location(module_name, ext_path)
         if spec is None or spec.loader is None:
             raise RuntimeError(f"Failed to load extension: {ext_path}")
         module = importlib.util.module_from_spec(spec)
@@ -82,12 +84,22 @@ def _load_extension(required: tuple[str, ...] | None = None):
     if required:
         missing = [name for name in required if not hasattr(module, name)]
         if missing:
-            _build_extension()
+            _build_extension(module_name)
             module = _load()
             missing = [name for name in required if not hasattr(module, name)]
             if missing:
                 raise RuntimeError(f"Missing extension symbols: {missing}")
     return module
+
+
+def _load_simplified_extension(
+    required: tuple[str, ...] | None = None,
+):
+    _load_extension()
+    return _load_extension(
+        module_name="_simplified_potential_cpp",
+        required=required,
+    )
 
 
 def smoothed_offset_potential_cpp(
@@ -115,6 +127,60 @@ def smoothed_offset_potential_accelerated_cpp(
 ) -> np.ndarray:
     module = _load_extension(required=("smoothed_offset_potential_accelerated_cpp",))
     return module.smoothed_offset_potential_accelerated_cpp(
+        q, V, F,
+        alpha, p, epsilon,
+        include_faces, include_edges, include_vertices,
+        localized, one_sided,
+    )
+
+
+def simplified_smoothed_offset_potential_cpp(
+    q: np.ndarray, V: np.ndarray, F: np.ndarray,
+    *,
+    alpha: float = 0.1, p: float = 2.0, epsilon: float = 0.1,
+    include_faces: bool = True, include_edges: bool = True, include_vertices: bool = True,
+    localized: bool = False, one_sided: bool = False,
+) -> np.ndarray:
+    module = _load_simplified_extension(
+        required=("simplified_smoothed_offset_potential_cpp",),
+    )
+    return module.simplified_smoothed_offset_potential_cpp(
+        q, V, F,
+        alpha, p, epsilon,
+        include_faces, include_edges, include_vertices,
+        localized, one_sided,
+    )
+
+
+def simplified_smoothed_offset_potential_accelerated_cpp(
+    q: np.ndarray, V: np.ndarray, F: np.ndarray,
+    *,
+    alpha: float = 0.1, p: float = 2.0, epsilon: float = 0.1,
+    include_faces: bool = True, include_edges: bool = True, include_vertices: bool = True,
+    localized: bool = False, one_sided: bool = False,
+) -> np.ndarray:
+    module = _load_simplified_extension(
+        required=("simplified_smoothed_offset_potential_accelerated_cpp",),
+    )
+    return module.simplified_smoothed_offset_potential_accelerated_cpp(
+        q, V, F,
+        alpha, p, epsilon,
+        include_faces, include_edges, include_vertices,
+        localized, one_sided,
+    )
+
+
+def simplified_smoothed_offset_potential_cpp_tinyad(
+    q: np.ndarray, V: np.ndarray, F: np.ndarray,
+    *,
+    alpha: float = 0.1, p: float = 2.0, epsilon: float = 0.1,
+    include_faces: bool = True, include_edges: bool = True, include_vertices: bool = True,
+    localized: bool = False, one_sided: bool = False,
+) -> tuple[float, np.ndarray]:
+    module = _load_simplified_extension(
+        required=("simplified_smoothed_offset_potential_cpp_tinyad",),
+    )
+    return module.simplified_smoothed_offset_potential_cpp_tinyad(
         q, V, F,
         alpha, p, epsilon,
         include_faces, include_edges, include_vertices,
@@ -181,6 +247,40 @@ def potential_face_cpp_tinyad(
     )
 
 
+def simplified_potential_face(
+    q: np.ndarray,
+    face_points: np.ndarray,
+    *,
+    params=None,
+) -> float:
+    module = _load_simplified_extension(required=("simplified_potential_face",))
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_face(
+        q,
+        face_points,
+        params,
+    )
+
+
+def simplified_potential_face_cpp_tinyad(
+    q: np.ndarray,
+    face_points: np.ndarray,
+    *,
+    params=None,
+) -> tuple[float, np.ndarray]:
+    module = _load_simplified_extension(
+        required=("simplified_potential_face_cpp_tinyad",),
+    )
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_face_cpp_tinyad(
+        q,
+        face_points,
+        params,
+    )
+
+
 def potential_edge(
     q: np.ndarray,
     edge_points: np.ndarray,
@@ -213,6 +313,40 @@ def potential_edge_cpp_tinyad(
         q,
         edge_points,
         has_f1,
+        params,
+    )
+
+
+def simplified_potential_edge(
+    q: np.ndarray,
+    edge_points: np.ndarray,
+    *,
+    params=None,
+) -> float:
+    module = _load_simplified_extension(required=("simplified_potential_edge",))
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_edge(
+        q,
+        edge_points,
+        params,
+    )
+
+
+def simplified_potential_edge_cpp_tinyad(
+    q: np.ndarray,
+    edge_points: np.ndarray,
+    *,
+    params=None,
+) -> tuple[float, np.ndarray]:
+    module = _load_simplified_extension(
+        required=("simplified_potential_edge_cpp_tinyad",),
+    )
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_edge_cpp_tinyad(
+        q,
+        edge_points,
         params,
     )
 
@@ -260,6 +394,39 @@ def potential_vertex_cpp_tinyad(
         params,
     )
 
+
+def simplified_potential_vertex(
+    q: np.ndarray,
+    p_v: np.ndarray,
+    *,
+    params=None,
+) -> float:
+    module = _load_simplified_extension(required=("simplified_potential_vertex",))
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_vertex(
+        q,
+        p_v,
+        params,
+    )
+
+
+def simplified_potential_vertex_cpp_tinyad(
+    q: np.ndarray,
+    p_v: np.ndarray,
+    *,
+    params=None,
+) -> tuple[float, np.ndarray]:
+    module = _load_simplified_extension(
+        required=("simplified_potential_vertex_cpp_tinyad",),
+    )
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_vertex_cpp_tinyad(
+        q,
+        p_v,
+        params,
+    )
 
 def potential_face_grad_hess(
     q: np.ndarray,
@@ -313,5 +480,59 @@ def potential_vertex_grad_hess(
         neighbor_points,
         is_boundary,
         pointed_vertex,
+        params,
+    )
+
+
+def simplified_potential_face_grad_hess(
+    q: np.ndarray,
+    face_points: np.ndarray,
+    *,
+    params=None,
+) -> tuple[np.ndarray, np.ndarray]:
+    module = _load_simplified_extension(
+        required=("simplified_potential_face_grad_hess",),
+    )
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_face_grad_hess(
+        q,
+        face_points,
+        params,
+    )
+
+
+def simplified_potential_edge_grad_hess(
+    q: np.ndarray,
+    edge_points: np.ndarray,
+    *,
+    params=None,
+) -> tuple[np.ndarray, np.ndarray]:
+    module = _load_simplified_extension(
+        required=("simplified_potential_edge_grad_hess",),
+    )
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_edge_grad_hess(
+        q,
+        edge_points,
+        params,
+    )
+
+
+def simplified_potential_vertex_grad_hess(
+    q: np.ndarray,
+    p_v: np.ndarray,
+    *,
+    params=None,
+) -> tuple[np.ndarray, np.ndarray]:
+    module = _load_simplified_extension(
+        required=("simplified_potential_vertex_grad_hess",),
+    )
+    if params is None:
+        params = potential_parameters()
+    return module.simplified_potential_vertex_grad_hess(
+        q,
+        p_v,
         params,
     )
